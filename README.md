@@ -197,29 +197,46 @@ void sub_11BF(void) {
 ## Tests
 
 ```bash
-cargo test --lib
+cargo test                  # all suites (unit + integration)
+cargo test --lib            # unit tests only
+cargo test --test binary_fixtures   # integration: format parsers
 ```
 
-Current suite: **127 unit tests**.
+Current suite: **235 unit + 10 integration tests** (245 total).
 
 | Module | Tests |
 |---|---|
 | `disasm::x86` | 5 |
 | `disasm::arm` | 10 |
 | `disasm::control_flow` | 6 |
+| `disasm::ir` | 8 |
 | `binary::parser` | 5 |
 | `binary::pe` | 1 |
 | `analysis::cyberchef` | 4 |
 | `analysis::functions` | 8 |
+| `analysis::patterns` | 7 |
 | `analysis::report` | 14 |
 | `analysis::runtime` | 10 |
 | `analysis::runtime_artifacts` | 5 |
 | `analysis::runtime_report` | 4 |
 | `analysis::strings` | 7 |
+| `analysis::types` | 16 |
+| `decompiler::ast` | 6 |
+| `decompiler::c_generator` | 17 |
 | `decompiler::c_syntax` | 12 |
-| `decompiler::lifter` | 12 |
+| `decompiler::lifter` | 10 |
+| `decompiler::optimization` | 15 |
+| `decompiler::signatures` | 16 |
 | `decompiler::string_refs` | 6 |
-| `decompiler::structure` | 18 |
+| `decompiler::structure` (IR helpers) | 22 |
+| `decompiler::structure_tests` (CFG end-to-end) | 18 |
+| `utils::error` | 3 |
+| `tests/binary_fixtures.rs` (ELF · PE · Mach-O) | 7 |
+| `tests/golden_decompile.rs` | 3 |
+
+**Integration fixtures** under `tests/fixtures/binary/` are vendored from the
+[`goblin`](https://github.com/m4b/goblin) crate (MIT, m4b) — see
+`tests/fixtures/binary/ATTRIBUTION.md` for licensing.
 
 ---
 
