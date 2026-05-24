@@ -208,3 +208,240 @@ impl Default for TypeInference {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::disasm::X86Instruction;
+
+    fn x86(mnemonic: &str, operands: &str) -> Instruction {
+        Instruction::X86(X86Instruction {
+            address: 0,
+            bytes: vec![],
+            mnemonic: mnemonic.to_string(),
+            operands: operands.to_string(),
+            length: 0,
+            ir: None,
+            near_branch_target: None,
+        })
+    }
+
+    // ---- TypeInfo::to_c_type ----
+
+    #[test]
+    fn primitive_types_emit_stdint_aliases() {
+        assert_eq!(TypeInfo::Void.to_c_type(), "void");
+        assert_eq!(TypeInfo::Bool.to_c_type(), "bool");
+        assert_eq!(TypeInfo::I8.to_c_type(), "int8_t");
+        assert_eq!(TypeInfo::U8.to_c_type(), "uint8_t");
+        assert_eq!(TypeInfo::I16.to_c_type(), "int16_t");
+        assert_eq!(TypeInfo::U16.to_c_type(), "uint16_t");
+        assert_eq!(TypeInfo::I32.to_c_type(), "int32_t");
+        assert_eq!(TypeInfo::U32.to_c_type(), "uint32_t");
+        assert_eq!(TypeInfo::I64.to_c_type(), "int64_t");
+        assert_eq!(TypeInfo::U64.to_c_type(), "uint64_t");
+    }
+
+    #[test]
+    fn pointer_types_map_void_char_and_uchar_specifically() {
+        assert_eq!(
+            TypeInfo::Pointer(Box::new(TypeInfo::Void)).to_c_type(),
+            "void*"
+        );
+        assert_eq!(
+            TypeInfo::Pointer(Box::new(TypeInfo::I8)).to_c_type(),
+            "char*"
+        );
+        assert_eq!(
+            TypeInfo::Pointer(Box::new(TypeInfo::U8)).to_c_type(),
+            "unsigned char*"
+        );
+    }
+
+    #[test]
+    fn pointer_to_other_types_falls_back_to_void_pointer() {
+        // Conservative — we don't currently emit `uint32_t*` etc.
+        assert_eq!(
+            TypeInfo::Pointer(Box::new(TypeInfo::U32)).to_c_type(),
+            "void*"
+        );
+        assert_eq!(
+            TypeInfo::Pointer(Box::new(TypeInfo::I64)).to_c_type(),
+            "void*"
+        );
+    }
+
+    #[test]
+    fn array_types_map_to_char_or_void_brackets() {
+        assert_eq!(
+            TypeInfo::Array(Box::new(TypeInfo::I8), 16).to_c_type(),
+            "char[]"
+        );
+        assert_eq!(
+            TypeInfo::Array(Box::new(TypeInfo::U8), 8).to_c_type(),
+            "unsigned char[]"
+        );
+        assert_eq!(
+            TypeInfo::Array(Box::new(TypeInfo::U32), 4).to_c_type(),
+            "void[]"
+        );
+    }
+
+    #[test]
+    fn function_pointer_and_unknown_have_conservative_defaults() {
+        assert_eq!(
+            TypeInfo::FunctionPointer {
+                params: vec![],
+                return_type: Box::new(TypeInfo::Void),
+            }
+            .to_c_type(),
+            "void(*)()"
+        );
+        assert_eq!(TypeInfo::Unknown.to_c_type(), "void*");
+    }
+
+    // ---- is_integer / is_pointer classification ----
+
+    #[test]
+    fn is_integer_is_true_for_all_signed_and_unsigned_integer_widths() {
+        for ty in [
+            TypeInfo::I8,
+            TypeInfo::U8,
+            TypeInfo::I16,
+            TypeInfo::U16,
+            TypeInfo::I32,
+            TypeInfo::U32,
+            TypeInfo::I64,
+            TypeInfo::U64,
+        ] {
+            assert!(ty.is_integer(), "{:?} should be an integer type", ty);
+        }
+    }
+
+    #[test]
+    fn is_integer_is_false_for_non_integer_types() {
+        for ty in [
+            TypeInfo::Void,
+            TypeInfo::Bool,
+            TypeInfo::Pointer(Box::new(TypeInfo::Void)),
+            TypeInfo::Array(Box::new(TypeInfo::I8), 4),
+            TypeInfo::FunctionPointer {
+                params: vec![],
+                return_type: Box::new(TypeInfo::Void),
+            },
+            TypeInfo::Unknown,
+        ] {
+            assert!(!ty.is_integer(), "{:?} should NOT be an integer type", ty);
+        }
+    }
+
+    #[test]
+    fn is_pointer_is_true_for_pointer_and_unknown_but_not_array_or_fnptr() {
+        // Pointer: yes. Unknown: yes (treated as void* by to_c_type).
+        assert!(TypeInfo::Pointer(Box::new(TypeInfo::Void)).is_pointer());
+        assert!(TypeInfo::Unknown.is_pointer());
+
+        // Array and function pointer are NOT classified as pointer here despite
+        // C semantics — this codifies the current contract; flip with care.
+        assert!(!TypeInfo::Array(Box::new(TypeInfo::I8), 4).is_pointer());
+        assert!(!TypeInfo::FunctionPointer {
+            params: vec![],
+            return_type: Box::new(TypeInfo::Void),
+        }
+        .is_pointer());
+    }
+
+    // ---- size ----
+
+    #[test]
+    fn size_matches_c_stdint_widths_in_bytes() {
+        assert_eq!(TypeInfo::Void.size(), 0);
+        assert_eq!(TypeInfo::Bool.size(), 1);
+        assert_eq!(TypeInfo::I8.size(), 1);
+        assert_eq!(TypeInfo::U16.size(), 2);
+        assert_eq!(TypeInfo::I32.size(), 4);
+        assert_eq!(TypeInfo::U64.size(), 8);
+    }
+
+    #[test]
+    fn size_assumes_64_bit_targets_for_pointers_fnptrs_and_unknown() {
+        assert_eq!(TypeInfo::Pointer(Box::new(TypeInfo::Void)).size(), 8);
+        assert_eq!(
+            TypeInfo::FunctionPointer {
+                params: vec![],
+                return_type: Box::new(TypeInfo::Void),
+            }
+            .size(),
+            8
+        );
+        assert_eq!(TypeInfo::Unknown.size(), 8);
+    }
+
+    #[test]
+    fn array_size_multiplies_element_size_by_element_count() {
+        // 4 × u32 (4 bytes each) = 16 bytes.
+        assert_eq!(TypeInfo::Array(Box::new(TypeInfo::U32), 4).size(), 16);
+        // 0-length array → 0 bytes.
+        assert_eq!(TypeInfo::Array(Box::new(TypeInfo::U64), 0).size(), 0);
+    }
+
+    // ---- TypeInference engine ----
+
+    #[test]
+    fn infer_from_immediate_picks_narrowest_unsigned_type_that_fits() {
+        let infer = TypeInference::new();
+        assert_eq!(infer.infer_from_immediate(0), TypeInfo::U8);
+        assert_eq!(infer.infer_from_immediate(0xFF), TypeInfo::U8);
+        assert_eq!(infer.infer_from_immediate(0x100), TypeInfo::U16);
+        assert_eq!(infer.infer_from_immediate(0xFFFF), TypeInfo::U16);
+        assert_eq!(infer.infer_from_immediate(0x10000), TypeInfo::U32);
+        assert_eq!(infer.infer_from_immediate(0xFFFF_FFFF), TypeInfo::U32);
+        assert_eq!(infer.infer_from_immediate(0x1_0000_0000), TypeInfo::U64);
+    }
+
+    #[test]
+    fn infer_from_x86_mov_immediate_uses_immediate_width_classifier() {
+        let mut infer = TypeInference::new();
+        // mov rax, 0x42 → immediate fits in U8.
+        assert_eq!(
+            infer.infer_from_instruction(&x86("mov", "rax, 0x42")),
+            TypeInfo::U8
+        );
+        // mov rax, 0x12345 → fits in U32 (>0xFFFF, ≤0xFFFFFFFF).
+        assert_eq!(
+            infer.infer_from_instruction(&x86("mov", "rax, 0x12345")),
+            TypeInfo::U32
+        );
+    }
+
+    #[test]
+    fn infer_from_x86_lea_returns_pointer_type() {
+        let mut infer = TypeInference::new();
+        assert_eq!(
+            infer.infer_from_instruction(&x86("lea", "rax, [rip+0x100]")),
+            TypeInfo::Pointer(Box::new(TypeInfo::Void))
+        );
+    }
+
+    #[test]
+    fn infer_from_x86_returns_unknown_for_uncategorized_mnemonics() {
+        let mut infer = TypeInference::new();
+        assert_eq!(
+            infer.infer_from_instruction(&x86("nop", "")),
+            TypeInfo::Unknown
+        );
+        assert_eq!(
+            infer.infer_from_instruction(&x86("ret", "")),
+            TypeInfo::Unknown
+        );
+    }
+
+    #[test]
+    fn set_and_get_type_round_trip_through_inference_store() {
+        let mut infer = TypeInference::new();
+        infer.set_type("rax".to_string(), TypeInfo::I32);
+
+        assert_eq!(infer.get_type("rax"), Some(&TypeInfo::I32));
+        assert_eq!(infer.get_type("rbx"), None);
+    }
+}

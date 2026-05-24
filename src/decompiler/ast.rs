@@ -204,3 +204,81 @@ impl AstNode {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_function() -> Function {
+        Function {
+            name: "f".to_string(),
+            return_type: TypeInfo::Void,
+            parameters: vec![],
+            body: vec![],
+            is_variadic: false,
+        }
+    }
+
+    #[test]
+    fn from_expression_tags_node_type_and_only_populates_expression_slot() {
+        let node = AstNode::from_expression(Expression::IntegerLiteral(7));
+        assert_eq!(node.node_type, AstNodeType::Expression);
+        assert!(matches!(node.expression, Some(Expression::IntegerLiteral(7))));
+        assert!(node.statement.is_none());
+        assert!(node.function.is_none());
+    }
+
+    #[test]
+    fn from_statement_tags_node_type_and_only_populates_statement_slot() {
+        let node = AstNode::from_statement(Statement::Return(None));
+        assert_eq!(node.node_type, AstNodeType::Statement);
+        assert!(matches!(node.statement, Some(Statement::Return(None))));
+        assert!(node.expression.is_none());
+        assert!(node.function.is_none());
+    }
+
+    #[test]
+    fn from_function_tags_node_type_and_only_populates_function_slot() {
+        let node = AstNode::from_function(empty_function());
+        assert_eq!(node.node_type, AstNodeType::Function);
+        assert!(node.function.is_some());
+        assert!(node.expression.is_none());
+        assert!(node.statement.is_none());
+    }
+
+    #[test]
+    fn ast_node_type_equality_distinguishes_variants() {
+        // The discriminator must be reliable — passes downstream use it to
+        // dispatch without inspecting the optional payloads.
+        assert_eq!(AstNodeType::Function, AstNodeType::Function);
+        assert_ne!(AstNodeType::Expression, AstNodeType::Statement);
+        assert_ne!(AstNodeType::VariableDeclaration, AstNodeType::TypeDeclaration);
+    }
+
+    #[test]
+    fn operator_enums_compare_by_variant() {
+        assert_eq!(BinaryOperator::Add, BinaryOperator::Add);
+        assert_ne!(BinaryOperator::Add, BinaryOperator::Subtract);
+        assert_eq!(UnaryOperator::Negate, UnaryOperator::Negate);
+        assert_ne!(UnaryOperator::Negate, UnaryOperator::BitwiseNot);
+    }
+
+    #[test]
+    fn function_struct_supports_clone_and_preserves_signature_fields() {
+        let mut original = empty_function();
+        original.name = "sub_4010".to_string();
+        original.return_type = TypeInfo::U32;
+        original.parameters.push(Parameter {
+            name: "arg1".to_string(),
+            type_info: TypeInfo::U64,
+        });
+        original.is_variadic = true;
+
+        let cloned = original.clone();
+        assert_eq!(cloned.name, "sub_4010");
+        assert_eq!(cloned.return_type, TypeInfo::U32);
+        assert_eq!(cloned.parameters.len(), 1);
+        assert_eq!(cloned.parameters[0].name, "arg1");
+        assert!(cloned.is_variadic);
+    }
+}
