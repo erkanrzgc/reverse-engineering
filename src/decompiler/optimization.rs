@@ -161,17 +161,24 @@ impl Optimizer {
         };
 
         if let (Some(l), Some(r)) = (left_val, right_val) {
+            // Use checked arithmetic so that overflow, division by zero, or
+            // out-of-range shift amounts return None instead of panicking in
+            // debug builds (and silently producing wrong values in release).
+            // When folding is unsafe, the original BinaryOperation is left
+            // intact for the C generator and a human reviewer to interpret.
+            let shift_amount = u32::try_from(r).ok();
+
             let result = match op {
-                BinaryOperator::Add => l + r,
-                BinaryOperator::Subtract => l - r,
-                BinaryOperator::Multiply => l * r,
-                BinaryOperator::Divide => l / r,
-                BinaryOperator::Modulo => l % r,
+                BinaryOperator::Add => l.checked_add(r)?,
+                BinaryOperator::Subtract => l.checked_sub(r)?,
+                BinaryOperator::Multiply => l.checked_mul(r)?,
+                BinaryOperator::Divide => l.checked_div(r)?,
+                BinaryOperator::Modulo => l.checked_rem(r)?,
                 BinaryOperator::BitwiseAnd => l & r,
                 BinaryOperator::BitwiseOr => l | r,
                 BinaryOperator::BitwiseXor => l ^ r,
-                BinaryOperator::LeftShift => l << r,
-                BinaryOperator::RightShift => l >> r,
+                BinaryOperator::LeftShift => l.checked_shl(shift_amount?)?,
+                BinaryOperator::RightShift => l.checked_shr(shift_amount?)?,
                 _ => return None,
             };
             Some(Expression::IntegerLiteral(result))
@@ -626,36 +633,89 @@ mod tests {
         assert_eq!(func.body.len(), 2);
     }
 
-    // ---- known bugs locked in by tests (TODO: fix and flip these) ----
+    // ---- checked-arithmetic safety net for fold_constant ----
 
-    #[test]
-    #[should_panic(expected = "attempt to divide by zero")]
-    fn fold_constant_divide_by_zero_currently_panics_in_debug() {
-        // TODO(P1): make fold_constant return None for div/mod by zero and any
-        // overflow, instead of panicking on `l / r`. Currently locked in to surface
-        // the bug if regressions arrive.
-        run(
+    /// Run the optimizer and assert that the (single) folded body statement
+    /// is still a BinaryOperation with the same operator — i.e. folding was
+    /// skipped because the operation was unsafe at the given operand values.
+    fn assert_left_unfolded(op: BinaryOperator, left: i64, right: i64) {
+        let func = run(
             OptimizationLevel::Basic,
-            vec![Statement::Expression(bin(
-                BinaryOperator::Divide,
-                lit(1),
-                lit(0),
-            ))],
+            vec![Statement::Expression(bin(op, lit(left), lit(right)))],
+        );
+        assert!(
+            matches!(
+                &func.body[..],
+                [Statement::Expression(Expression::BinaryOperation { op: actual, .. })]
+                    if *actual == op
+            ),
+            "expected {:?} {} {} to be left as a BinaryOperation, got {:?}",
+            op,
+            left,
+            right,
+            func.body
         );
     }
 
     #[test]
-    #[should_panic(expected = "attempt to shift left with overflow")]
-    fn fold_constant_oversized_shift_currently_panics_in_debug() {
-        // TODO(P1): clamp/check shift amount in fold_constant; currently `1 << 64`
-        // panics in debug builds and is undefined behaviour in release.
-        run(
+    fn fold_constant_leaves_division_by_zero_unfolded_instead_of_panicking() {
+        assert_left_unfolded(BinaryOperator::Divide, 1, 0);
+        assert_left_unfolded(BinaryOperator::Divide, i64::MIN, 0);
+    }
+
+    #[test]
+    fn fold_constant_leaves_modulo_by_zero_unfolded_instead_of_panicking() {
+        assert_left_unfolded(BinaryOperator::Modulo, 7, 0);
+    }
+
+    #[test]
+    fn fold_constant_leaves_signed_overflow_unfolded_instead_of_panicking() {
+        // i64::MAX + 1, i64::MIN - 1, i64::MIN * -1 — all overflow.
+        assert_left_unfolded(BinaryOperator::Add, i64::MAX, 1);
+        assert_left_unfolded(BinaryOperator::Subtract, i64::MIN, 1);
+        assert_left_unfolded(BinaryOperator::Multiply, i64::MIN, -1);
+    }
+
+    #[test]
+    fn fold_constant_leaves_division_overflow_unfolded() {
+        // i64::MIN / -1 overflows because the absolute value would be i64::MAX+1.
+        assert_left_unfolded(BinaryOperator::Divide, i64::MIN, -1);
+    }
+
+    #[test]
+    fn fold_constant_leaves_oversized_or_negative_shifts_unfolded() {
+        // Out-of-range shift amounts that would invoke UB are rejected.
+        for (op, amount) in [
+            (BinaryOperator::LeftShift, 64i64),
+            (BinaryOperator::LeftShift, 128),
+            (BinaryOperator::LeftShift, -1),
+            (BinaryOperator::RightShift, 64),
+            (BinaryOperator::RightShift, -1),
+        ] {
+            assert_left_unfolded(op, 1, amount);
+        }
+    }
+
+    #[test]
+    fn fold_constant_still_folds_when_arithmetic_is_safe() {
+        // Regression guard: the safety net must not break the common case.
+        let func = run(
             OptimizationLevel::Basic,
-            vec![Statement::Expression(bin(
-                BinaryOperator::LeftShift,
-                lit(1),
-                lit(64),
-            ))],
+            vec![
+                Statement::Expression(bin(BinaryOperator::Add, lit(2), lit(3))),
+                Statement::Expression(bin(BinaryOperator::Divide, lit(20), lit(4))),
+                Statement::Expression(bin(BinaryOperator::LeftShift, lit(1), lit(63))),
+            ],
         );
+
+        let values: Vec<i64> = func
+            .body
+            .iter()
+            .filter_map(|s| match s {
+                Statement::Expression(Expression::IntegerLiteral(v)) => Some(*v),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(values, vec![5, 5, i64::MIN]);
     }
 }
