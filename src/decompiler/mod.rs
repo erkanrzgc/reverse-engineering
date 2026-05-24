@@ -59,6 +59,7 @@ mod structure_tests {
             mnemonic: mnemonic.to_string(),
             operands: operands.to_string(),
             length: 1,
+            ir: None,
             near_branch_target: target,
         }
     }

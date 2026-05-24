@@ -39,7 +39,15 @@ impl BinaryFormat {
         // Mach-O: 0xFEEDFACE or 0xCEFAEDFE (big/little endian)
         if bytes.len() >= 4 {
             let magic = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-            if magic == 0xFEEDFACE || magic == 0xCEFAEDFE || magic == 0xBEBAFECA {
+            // 32-bit: FEEDFACE / CEFAEDFE
+            // 64-bit: FEEDFACF / CFFAEDFE
+            // Fat:    CAFEBABE (le read -> BEBAFECA)
+            if magic == 0xFEEDFACE
+                || magic == 0xCEFAEDFE
+                || magic == 0xFEEDFACF
+                || magic == 0xCFFAEDFE
+                || magic == 0xBEBAFECA
+            {
                 return Some(BinaryFormat::MachO);
             }
         }
@@ -191,6 +199,11 @@ mod tests {
         // Little-endian 32-bit Mach-O (0xFEEDFACE LE in file)
         assert_eq!(
             BinaryFormat::from_magic(&[0xCE, 0xFA, 0xED, 0xFE]),
+            Some(BinaryFormat::MachO)
+        );
+        // Little-endian 64-bit Mach-O (0xFEEDFACF LE in file)
+        assert_eq!(
+            BinaryFormat::from_magic(&[0xCF, 0xFA, 0xED, 0xFE]),
             Some(BinaryFormat::MachO)
         );
         // Fat / universal binary

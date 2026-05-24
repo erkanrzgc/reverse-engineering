@@ -349,3 +349,252 @@ impl Default for CGenerator {
         Self::new(CGeneratorConfig::default())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analysis::TypeInfo;
+    use crate::decompiler::ast::{Function, Parameter, Statement};
+
+    fn gen() -> CGenerator {
+        CGenerator::default()
+    }
+
+    fn func(name: &str, body: Vec<Statement>) -> Function {
+        Function {
+            name: name.to_string(),
+            return_type: TypeInfo::Void,
+            parameters: vec![],
+            body,
+            is_variadic: false,
+        }
+    }
+
+    // ---- signatures ----
+
+    #[test]
+    fn empty_parameter_list_emits_void_in_signature() {
+        let mut g = gen();
+        let out = g.generate_function(&func("sub_1000", vec![]));
+        assert!(out.starts_with("void sub_1000(void) {"), "got: {out}");
+    }
+
+    #[test]
+    fn parameters_render_with_types_and_sanitized_names() {
+        let mut g = gen();
+        let f = Function {
+            name: "do_thing".to_string(),
+            return_type: TypeInfo::I32,
+            parameters: vec![
+                Parameter {
+                    name: "size".to_string(),
+                    type_info: TypeInfo::U64,
+                },
+                Parameter {
+                    // Reserved C keyword must be suffixed by sanitize_c_identifier.
+                    name: "return".to_string(),
+                    type_info: TypeInfo::I32,
+                },
+            ],
+            body: vec![Statement::Return(Some(Expression::IntegerLiteral(0)))],
+            is_variadic: false,
+        };
+        let out = g.generate_function(&f);
+        let first_line = out.lines().next().unwrap();
+        assert_eq!(first_line, "int32_t do_thing(uint64_t size, int32_t return_) {");
+    }
+
+    #[test]
+    fn function_name_is_sanitized_to_valid_c_identifier() {
+        let mut g = gen();
+        // Dots are illegal in C identifiers; sanitizer collapses them to `_`.
+        let out = g.generate_function(&func("kernel32.dll!CreateFileW", vec![]));
+        assert!(out.starts_with("void kernel32_dll_CreateFileW(void) {"), "got: {out}");
+    }
+
+    // ---- statements ----
+
+    #[test]
+    fn return_none_renders_as_bare_return() {
+        let mut g = gen();
+        let out = g.generate_function(&func("f", vec![Statement::Return(None)]));
+        assert!(out.contains("    return;"), "got: {out}");
+    }
+
+    #[test]
+    fn return_with_value_renders_expression() {
+        let mut g = gen();
+        let out = g.generate_function(&func(
+            "f",
+            vec![Statement::Return(Some(Expression::IntegerLiteral(42)))],
+        ));
+        assert!(out.contains("    return 42;"), "got: {out}");
+    }
+
+    #[test]
+    fn variable_declaration_with_and_without_init() {
+        let mut g = gen();
+        let out = g.generate_function(&func(
+            "f",
+            vec![
+                Statement::VariableDeclaration {
+                    name: "rax".to_string(),
+                    type_info: TypeInfo::U64,
+                    init: None,
+                },
+                Statement::VariableDeclaration {
+                    name: "rcx".to_string(),
+                    type_info: TypeInfo::U64,
+                    init: Some(Expression::IntegerLiteral(0)),
+                },
+            ],
+        ));
+        assert!(out.contains("    uint64_t rax;"), "got: {out}");
+        assert!(out.contains("    uint64_t rcx = 0;"), "got: {out}");
+    }
+
+    #[test]
+    fn if_else_indents_nested_blocks_with_four_spaces() {
+        let mut g = gen();
+        let body = vec![Statement::If {
+            condition: Expression::Variable("rax".to_string()),
+            then_block: vec![Statement::Return(Some(Expression::IntegerLiteral(1)))],
+            else_block: Some(vec![Statement::Return(Some(Expression::IntegerLiteral(0)))]),
+        }];
+        let out = g.generate_function(&func("f", body));
+        assert!(out.contains("    if (rax) {\n"), "got: {out}");
+        assert!(out.contains("        return 1;"), "then indented 8 spaces, got: {out}");
+        assert!(out.contains("    } else {"), "else line matches outer indent, got: {out}");
+        assert!(out.contains("        return 0;"), "else body indented 8 spaces, got: {out}");
+    }
+
+    #[test]
+    fn inline_asm_becomes_address_prefixed_c_comment_with_sanitized_terminator() {
+        let mut g = gen();
+        // `*/` inside a /* ... */ comment would terminate it early; sanitize_c_comment
+        // must split it into `* /`.
+        let out = g.generate_function(&func(
+            "f",
+            vec![Statement::InlineAsm {
+                address: 0x401000,
+                disasm: "mov rax, qword ptr [rip+*/oops]".to_string(),
+            }],
+        ));
+        assert!(
+            out.contains("    /* 0x401000: mov rax, qword ptr [rip+* /oops] */"),
+            "got: {out}"
+        );
+        assert!(
+            !out.contains("*/oops"),
+            "comment terminator must be split: {out}"
+        );
+    }
+
+    #[test]
+    fn block_statement_emits_braces_and_indents_body() {
+        let mut g = gen();
+        let body = vec![Statement::Block(vec![Statement::Return(None)])];
+        let out = g.generate_function(&func("f", body));
+        assert!(out.contains("    {\n"), "got: {out}");
+        assert!(out.contains("        return;"), "got: {out}");
+    }
+
+    #[test]
+    fn break_continue_render_as_keywords() {
+        let mut g = gen();
+        let out = g.generate_function(&func(
+            "f",
+            vec![Statement::Break, Statement::Continue],
+        ));
+        assert!(out.contains("    break;"));
+        assert!(out.contains("    continue;"));
+    }
+
+    // ---- expressions ----
+
+    fn render_expression(expr: Expression) -> String {
+        let mut g = gen();
+        let out = g.generate_function(&func("f", vec![Statement::Expression(expr)]));
+        // Body line for an expression statement is `    <expr>;` — extract it.
+        out.lines()
+            .find(|l| l.starts_with("    ") && !l.starts_with("    /*"))
+            .unwrap_or("")
+            .trim()
+            .trim_end_matches(';')
+            .to_string()
+    }
+
+    #[test]
+    fn binary_operation_is_fully_parenthesized() {
+        let expr = Expression::BinaryOperation {
+            op: BinaryOperator::Add,
+            left: Box::new(Expression::IntegerLiteral(1)),
+            right: Box::new(Expression::BinaryOperation {
+                op: BinaryOperator::Multiply,
+                left: Box::new(Expression::IntegerLiteral(2)),
+                right: Box::new(Expression::IntegerLiteral(3)),
+            }),
+        };
+        assert_eq!(render_expression(expr), "(1 + (2 * 3))");
+    }
+
+    #[test]
+    fn unary_negate_emits_minus_prefix_without_space() {
+        let expr = Expression::UnaryOperation {
+            op: UnaryOperator::Negate,
+            operand: Box::new(Expression::IntegerLiteral(5)),
+        };
+        assert_eq!(render_expression(expr), "-5");
+    }
+
+    #[test]
+    fn cast_renders_in_c_parenthesized_form() {
+        let expr = Expression::Cast {
+            type_info: TypeInfo::I32,
+            value: Box::new(Expression::Variable("x".to_string())),
+        };
+        assert_eq!(render_expression(expr), "(int32_t)x");
+    }
+
+    #[test]
+    fn function_call_sanitizes_name_and_joins_arguments_with_comma_space() {
+        let expr = Expression::FunctionCall {
+            function: "kernel32.dll!CreateFileW".to_string(),
+            arguments: vec![
+                Expression::Variable("path".to_string()),
+                Expression::IntegerLiteral(0),
+                Expression::IntegerLiteral(1),
+            ],
+        };
+        assert_eq!(
+            render_expression(expr),
+            "kernel32_dll_CreateFileW(path, 0, 1)"
+        );
+    }
+
+    #[test]
+    fn string_literal_is_escaped_and_double_quoted() {
+        let expr = Expression::StringLiteral("hi\nthere".to_string());
+        assert_eq!(render_expression(expr), "\"hi\\nthere\"");
+    }
+
+    #[test]
+    fn array_access_and_dereference_render_with_pointer_syntax() {
+        let arr = Expression::ArrayAccess {
+            array: Box::new(Expression::Variable("buf".to_string())),
+            index: Box::new(Expression::IntegerLiteral(7)),
+        };
+        let deref = Expression::Dereference(Box::new(Expression::Variable("p".to_string())));
+
+        assert_eq!(render_expression(arr), "buf[7]");
+        assert_eq!(render_expression(deref), "*p");
+    }
+
+    #[test]
+    fn variable_keyword_collisions_get_suffixed() {
+        // A pseudo-variable accidentally named after a C keyword must not leak
+        // into the output verbatim; sanitize_c_identifier appends `_`.
+        let expr = Expression::Variable("return".to_string());
+        assert_eq!(render_expression(expr), "return_");
+    }
+}

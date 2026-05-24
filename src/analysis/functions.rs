@@ -256,6 +256,7 @@ mod tests {
             mnemonic: mnemonic.to_string(),
             operands: String::new(),
             length: bytes.len(),
+            ir: None,
             near_branch_target: target,
         })
     }

@@ -1388,6 +1388,7 @@ mod tests {
             mnemonic: mnemonic.to_string(),
             operands: operands.to_string(),
             length,
+            ir: None,
             near_branch_target: target,
         })
     }

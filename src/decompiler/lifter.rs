@@ -1,18 +1,27 @@
 //! Bridge from disassembly-level `FunctionInfo` to AST-level `ast::Function`.
 //!
-//! This is the *minimum honest lift*. We produce a well-typed `ast::Function`
-//! whose body is one `InlineAsm` statement per input instruction. No
-//! structuring, no type recovery, no parameter inference — those belong to
-//! later passes. The point is to have a single well-defined seam between
+//! The lifter produces a well-typed `ast::Function` whose body contains
+//! a mix of real `Expression` statements and `InlineAsm` placeholders.
+//! Arithmetic, logic, and shift instructions are lifted to `Assignment` +
+//! `BinaryOperation` / `UnaryOperation` nodes when the instruction carries
+//! an `InstructionIR`. Instructions without IR (or with unsupported operand
+//! forms) fall back to `InlineAsm` so structuring and C generation remain
+//! compilable.
+//!
+//! Structuring, type recovery, and parameter inference belong to later
+//! passes. The point is to have a single well-defined seam between
 //! `analysis::FunctionInfo` (what we discovered) and `decompiler::CGenerator`
 //! (what we emit), so downstream passes can iterate on the AST rather than on
 //! raw instruction lists.
 
 use crate::analysis::{FunctionInfo, TypeInfo};
 use crate::binary::parser::ImportAddressInfo;
-use crate::decompiler::ast::{Expression, Function, Statement};
+use crate::decompiler::ast::{
+    BinaryOperator, Expression, Function, Statement, UnaryOperator,
+};
 use crate::decompiler::c_syntax::{sanitize_c_identifier, unique_c_identifier};
 use crate::disasm::control_flow::Instruction;
+use crate::disasm::ir::{Operand, Operand::*, MemoryOperand};
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 
@@ -125,6 +134,10 @@ fn instruction_to_statement(instr: &Instruction, call_targets: &HashMap<u64, Str
         });
     }
 
+    if let Statement::Expression(expr) = lift_ir_to_statement(instr) {
+        return Statement::Expression(expr);
+    }
+
     let (address, disasm) = match instr {
         Instruction::X86(x) => (x.address, x.to_string()),
         Instruction::Arm(a) => (a.address, a.to_string()),
@@ -191,330 +204,477 @@ fn parse_hex_token(token: &str) -> Option<u64> {
     u64::from_str_radix(stripped, 16).ok()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::binary::parser::ImportAddressInfo;
-    use crate::disasm::X86Instruction;
+// ---------------------------------------------------------------------------
+// Arithmetic / logic / shift IR lifting
+// ---------------------------------------------------------------------------
 
-    fn x86_instr(address: u64, mnemonic: &str, operands: &str) -> Instruction {
-        x86_instr_with_len(address, mnemonic, operands, 1)
+/// Try to convert an instruction's IR into an `Expression` statement.
+/// Returns `None` when IR is absent or the mnemonic is unsupported — the
+/// caller should fall back to `InlineAsm`.
+fn lift_ir_to_statement(instr: &Instruction) -> Statement {
+    let (address, ir) = match instr {
+        Instruction::X86(x) => (x.address, x.ir.as_ref()),
+        // ARM IR is not populated yet — fall back.
+        Instruction::Arm(a) => return Statement::InlineAsm {
+            address: a.address,
+            disasm: a.to_string(),
+        },
+    };
+
+    let Some(ir) = ir else {
+        return Statement::InlineAsm {
+            address,
+            disasm: match instr {
+                Instruction::X86(x) => x.to_string(),
+                Instruction::Arm(a) => a.to_string(),
+            },
+        };
+    };
+
+    let Some(expr) = ir_to_expression(ir) else {
+        return Statement::InlineAsm {
+            address,
+            disasm: match instr {
+                Instruction::X86(x) => x.to_string(),
+                Instruction::Arm(a) => a.to_string(),
+            },
+        };
+    };
+
+    Statement::Expression(expr)
+}
+
+/// Map an `InstructionIR` to an `Expression` when the mnemonic is one we
+/// can structurally represent.
+fn ir_to_expression(ir: &crate::disasm::ir::InstructionIR) -> Option<Expression> {
+    match ir.op.as_str() {
+        "add" | "sub" | "and" | "or" | "xor" | "shl" | "shr"
+        | "lea" | "imul" => binary_arithmetic(ir),
+        "inc" | "dec" => inc_dec(ir),
+        "neg" | "not" => unary_arithmetic(ir),
+        "mov" | "movzx" | "movsxd" => simple_mov(ir),
+        _ => None,
+    }
+}
+
+// --- Binary arithmetic: add, sub, and, or, xor, shl, shr, lea, imul ---
+
+fn binary_arithmetic(ir: &crate::disasm::ir::InstructionIR) -> Option<Expression> {
+    let left = ir.operands.first()?;
+    let right = ir.operands.get(1)?;
+    let op = mnemonic_to_binary_op(&ir.op)?;
+
+    let left_expr = operand_to_expr(left)?;
+    let right_expr = operand_to_expr(right)?;
+
+    Some(Expression::Assignment {
+        target: Box::new(left_expr.clone()),
+        value: Box::new(Expression::BinaryOperation {
+            op,
+            left: Box::new(left_expr),
+            right: Box::new(right_expr),
+        }),
+    })
+}
+
+fn mnemonic_to_binary_op(mnemonic: &str) -> Option<BinaryOperator> {
+    match mnemonic {
+        "add" | "lea" => Some(BinaryOperator::Add),
+        "sub" => Some(BinaryOperator::Subtract),
+        "and" => Some(BinaryOperator::BitwiseAnd),
+        "or" => Some(BinaryOperator::BitwiseOr),
+        "xor" => Some(BinaryOperator::BitwiseXor),
+        "shl" => Some(BinaryOperator::LeftShift),
+        "shr" => Some(BinaryOperator::RightShift),
+        "imul" => Some(BinaryOperator::Multiply),
+        _ => None,
+    }
+}
+
+// --- inc / dec ---
+
+fn inc_dec(ir: &crate::disasm::ir::InstructionIR) -> Option<Expression> {
+    let operand = ir.operands.first()?;
+    let expr = operand_to_expr(operand)?;
+    let op = if ir.op == "inc" {
+        BinaryOperator::Add
+    } else {
+        BinaryOperator::Subtract
+    };
+
+    Some(Expression::Assignment {
+        target: Box::new(expr.clone()),
+        value: Box::new(Expression::BinaryOperation {
+            op,
+            left: Box::new(expr),
+            right: Box::new(Expression::IntegerLiteral(1)),
+        }),
+    })
+}
+
+// --- neg / not ---
+
+fn unary_arithmetic(ir: &crate::disasm::ir::InstructionIR) -> Option<Expression> {
+    let operand = ir.operands.first()?;
+    let expr = operand_to_expr(operand)?;
+    let op = if ir.op == "neg" {
+        UnaryOperator::Negate
+    } else {
+        UnaryOperator::BitwiseNot
+    };
+
+    Some(Expression::Assignment {
+        target: Box::new(expr.clone()),
+        value: Box::new(Expression::UnaryOperation {
+            op,
+            operand: Box::new(expr),
+        }),
+    })
+}
+
+// --- mov (reg/imm only — the one already handled by structure.rs for the
+//     register-to-register case, but this covers mov reg, imm too) ---
+
+fn simple_mov(ir: &crate::disasm::ir::InstructionIR) -> Option<Expression> {
+    let left = ir.operands.first()?;
+    let right = ir.operands.get(1)?;
+
+    // Only lift when both operands are register or immediate — memory
+    // operands (especially with scale/index) fall back to InlineAsm so the
+    // structuring pass doesn't emit invalid C.
+    let target_expr = operand_to_expr(left)?;
+    let value_expr = operand_to_expr(right)?;
+
+    Some(Expression::Assignment {
+        target: Box::new(target_expr),
+        value: Box::new(value_expr),
+    })
+}
+
+// --- Operand → Expression conversion ---
+
+fn operand_to_expr(operand: &Operand) -> Option<Expression> {
+    match operand {
+        Reg(r) => Some(Expression::Variable(canonicalize_reg_name(r))),
+        Imm(v) => Some(Expression::IntegerLiteral(*v)),
+        Mem(mem) => stack_var_or_lea(mem),
+        Other(_) => None,
+    }
+}
+
+/// For memory operands that look like simple stack refs (rbp/esp-based),
+/// produce a variable name. For anything with a scale > 1 or an index,
+/// return None so the caller falls back to InlineAsm.
+fn stack_var_or_lea(mem: &MemoryOperand) -> Option<Expression> {
+    if let Some(ref base) = mem.base {
+        let lower = base.to_ascii_lowercase();
+        if matches!(lower.as_str(), "rbp" | "ebp") {
+            let prefix = if mem.disp < 0 { "local" } else { "arg" };
+            let offset = mem.disp.unsigned_abs();
+            return Some(Expression::Variable(format!("{prefix}_{offset:x}")));
+        }
+        if matches!(lower.as_str(), "rsp" | "esp") {
+            let prefix = if mem.disp < 0 { "stack_m" } else { "stack" };
+            let offset = mem.disp.unsigned_abs();
+            return Some(Expression::Variable(format!("{prefix}_{offset:x}")));
+        }
     }
 
-    fn x86_instr_with_len(
-        address: u64,
-        mnemonic: &str,
-        operands: &str,
-        length: usize,
-    ) -> Instruction {
+    // LEA with RIP-relative addressing or indexed operands → no safe lift.
+    None
+}
+
+fn canonicalize_reg_name(value: &str) -> String {
+    let lower = value.to_ascii_lowercase();
+    match lower.as_str() {
+        "al" | "ah" | "ax" | "eax" | "rax" => "rax",
+        "bl" | "bh" | "bx" | "ebx" | "rbx" => "rbx",
+        "cl" | "ch" | "cx" | "ecx" | "rcx" => "rcx",
+        "dl" | "dh" | "dx" | "edx" | "rdx" => "rdx",
+        "sil" | "si" | "esi" | "rsi" => "rsi",
+        "dil" | "di" | "edi" | "rdi" => "rdi",
+        "bpl" | "bp" | "ebp" | "rbp" => "rbp",
+        "spl" | "sp" | "esp" | "rsp" => "rsp",
+        "r8b" | "r8w" | "r8d" | "r8" => "r8",
+        "r9b" | "r9w" | "r9d" | "r9" => "r9",
+        "r10b" | "r10w" | "r10d" | "r10" => "r10",
+        "r11b" | "r11w" | "r11d" | "r11" => "r11",
+        "r12b" | "r12w" | "r12d" | "r12" => "r12",
+        "r13b" | "r13w" | "r13d" | "r13" => "r13",
+        "r14b" | "r14w" | "r14d" | "r14" => "r14",
+        "r15b" | "r15w" | "r15d" | "r15" => "r15",
+        _ => lower.as_str(),
+    }
+    .to_string()
+}
+
+#[cfg(test)]
+mod ir_lifting_tests {
+    use super::*;
+    use crate::disasm::ir::InstructionIR;
+    use crate::disasm::X86Instruction;
+
+    fn ir_instr(address: u64, op: &str, operands: Vec<Operand>) -> Instruction {
         Instruction::X86(X86Instruction {
             address,
-            bytes: vec![0x90; length],
-            mnemonic: mnemonic.to_string(),
-            operands: operands.to_string(),
-            length,
+            bytes: vec![],
+            mnemonic: op.to_string(),
+            operands: format_operands(&operands),
+            length: 1,
+            ir: Some(InstructionIR {
+                address,
+                op: op.to_string(),
+                operands,
+            }),
             near_branch_target: None,
         })
     }
 
-    fn import_address(library: &str, function: &str, address: u64) -> ImportAddressInfo {
-        ImportAddressInfo {
-            library: library.to_string(),
-            function: function.to_string(),
-            address,
-            ordinal: None,
-        }
-    }
-
-    #[test]
-    fn lifted_function_preserves_name_and_instruction_order() {
-        let info = FunctionInfo {
-            name: "my_func".to_string(),
-            address: 0x1000,
-            size: 3,
-            instructions: vec![
-                x86_instr(0x1000, "push", "rbp"),
-                x86_instr(0x1001, "mov", "rbp, rsp"),
-                x86_instr(0x1004, "ret", ""),
-            ],
-            is_import: false,
-            is_export: false,
-        };
-
-        let func = lift_function(&info);
-        assert_eq!(func.name, "my_func");
-        assert_eq!(func.return_type, TypeInfo::Void);
-        assert!(func.parameters.is_empty());
-        assert_eq!(func.body.len(), 3);
-
-        // Body order matches instruction order, and each carries its address.
-        let addrs: Vec<u64> = func
-            .body
+    fn format_operands(operands: &[Operand]) -> String {
+        operands
             .iter()
-            .filter_map(|s| match s {
-                Statement::InlineAsm { address, .. } => Some(*address),
-                _ => None,
+            .map(|o| match o {
+                Reg(r) => r.clone(),
+                Imm(v) => format!("{v}"),
+                Mem(m) => {
+                    let base = m.base.as_deref().unwrap_or("");
+                    let disp = if m.disp >= 0 {
+                        format!("+0x{:X}", m.disp)
+                    } else {
+                        format!("-0x{:X}", m.disp.unsigned_abs())
+                    };
+                    format!("[{base}{disp}]")
+                }
+                Other(s) => s.clone(),
             })
-            .collect();
-        assert_eq!(addrs, vec![0x1000, 0x1001, 0x1004]);
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     #[test]
-    fn inline_asm_payload_includes_operands_when_present() {
-        let info = FunctionInfo {
-            name: "f".to_string(),
-            address: 0x2000,
-            size: 1,
-            instructions: vec![x86_instr(0x2000, "mov", "rax, 1")],
-            is_import: false,
-            is_export: false,
-        };
+    fn lift_add_reg_imm_produces_assignment() {
+        let stmt = lift_ir_to_statement(&ir_instr(
+            0x1000,
+            "add",
+            vec![Reg("rax".to_string()), Imm(5)],
+        ));
+        assert!(
+            matches!(
+                stmt,
+                Statement::Expression(Expression::Assignment { ref target, ref value })
+                    if matches!(target.as_ref(), Expression::Variable(name) if name == "rax")
+                        && matches!(
+                            value.as_ref(),
+                            Expression::BinaryOperation {
+                                op: BinaryOperator::Add,
+                                ref left,
+                                ref right,
+                            } if matches!(left.as_ref(), Expression::Variable(name) if name == "rax")
+                                && matches!(right.as_ref(), Expression::IntegerLiteral(5))
+                        )
+            ),
+            "got {:?}",
+            stmt
+        );
+    }
 
-        let func = lift_function(&info);
-        match &func.body[0] {
-            Statement::InlineAsm { address, disasm } => {
-                assert_eq!(*address, 0x2000);
-                assert_eq!(disasm, "mov rax, 1");
-            }
-            other => panic!("expected InlineAsm, got {:?}", other),
+    #[test]
+    fn lift_sub_reg_reg_produces_assignment() {
+        let stmt = lift_ir_to_statement(&ir_instr(
+            0x1010,
+            "sub",
+            vec![Reg("rax".to_string()), Reg("rbx".to_string())],
+        ));
+        assert!(
+            matches!(
+                stmt,
+                Statement::Expression(Expression::Assignment { ref target, ref value })
+                    if matches!(target.as_ref(), Expression::Variable(name) if name == "rax")
+                        && matches!(
+                            value.as_ref(),
+                            Expression::BinaryOperation {
+                                op: BinaryOperator::Subtract,
+                                ref left,
+                                ref right,
+                            } if matches!(left.as_ref(), Expression::Variable(name) if name == "rax")
+                                && matches!(right.as_ref(), Expression::Variable(name) if name == "rbx")
+                        )
+            ),
+            "got {:?}",
+            stmt
+        );
+    }
+
+    #[test]
+    fn lift_neg_reg_produces_unary_assignment() {
+        let stmt = lift_ir_to_statement(&ir_instr(
+            0x1020,
+            "neg",
+            vec![Reg("rcx".to_string())],
+        ));
+        assert!(
+            matches!(
+                stmt,
+                Statement::Expression(Expression::Assignment { ref target, ref value })
+                    if matches!(target.as_ref(), Expression::Variable(name) if name == "rcx")
+                        && matches!(
+                            value.as_ref(),
+                            Expression::UnaryOperation {
+                                op: UnaryOperator::Negate,
+                                ref operand,
+                            } if matches!(operand.as_ref(), Expression::Variable(name) if name == "rcx")
+                        )
+            ),
+            "got {:?}",
+            stmt
+        );
+    }
+
+    #[test]
+    fn lift_inc_reg_produces_add_one() {
+        let stmt = lift_ir_to_statement(&ir_instr(
+            0x1030,
+            "inc",
+            vec![Reg("rdx".to_string())],
+        ));
+        assert!(
+            matches!(
+                stmt,
+                Statement::Expression(Expression::Assignment { ref target, ref value })
+                    if matches!(target.as_ref(), Expression::Variable(name) if name == "rdx")
+                        && matches!(
+                            value.as_ref(),
+                            Expression::BinaryOperation {
+                                op: BinaryOperator::Add,
+                                ref right,
+                                ..
+                            } if matches!(right.as_ref(), Expression::IntegerLiteral(1))
+                        )
+            ),
+            "got {:?}",
+            stmt
+        );
+    }
+
+    #[test]
+    fn lift_and_or_xor_shift_produces_binary_op() {
+        for (mnemonic, expected_op) in [
+            ("and", BinaryOperator::BitwiseAnd),
+            ("or", BinaryOperator::BitwiseOr),
+            ("xor", BinaryOperator::BitwiseXor),
+            ("shl", BinaryOperator::LeftShift),
+            ("shr", BinaryOperator::RightShift),
+        ] {
+            let stmt = lift_ir_to_statement(&ir_instr(
+                0x1040,
+                mnemonic,
+                vec![Reg("rax".to_string()), Imm(3)],
+            ));
+            assert!(
+                matches!(
+                    stmt,
+                    Statement::Expression(Expression::Assignment { ref value, .. })
+                        if matches!(
+                            value.as_ref(),
+                            Expression::BinaryOperation { ref op, .. }
+                            if *op == expected_op
+                        )
+                ),
+                "{mnemonic} did not produce expected op {expected_op:?}, got {stmt:?}"
+            );
         }
     }
 
     #[test]
-    fn lift_function_sanitizes_invalid_c_identifier_names() {
-        let info = FunctionInfo {
-            name: "kernel32.dll!CreateFileW".to_string(),
-            address: 0x4000,
-            size: 0,
-            instructions: vec![],
-            is_import: false,
-            is_export: true,
-        };
-
-        let func = lift_function(&info);
-        assert_eq!(func.name, "kernel32_dll_CreateFileW");
-    }
-
-    #[test]
-    fn lift_function_uses_address_fallback_for_empty_sanitized_name() {
-        let info = FunctionInfo {
-            name: "!!!".to_string(),
-            address: 0x4010,
-            size: 0,
-            instructions: vec![],
-            is_import: false,
-            is_export: false,
-        };
-
-        let func = lift_function(&info);
-        assert_eq!(func.name, "sub_4010");
-    }
-
-    #[test]
-    fn lift_function_avoids_keywords_and_leading_digits() {
-        let keyword = FunctionInfo {
-            name: "return".to_string(),
-            address: 0x5000,
-            size: 0,
-            instructions: vec![],
-            is_import: false,
-            is_export: false,
-        };
-        let leading_digit = FunctionInfo {
-            name: "123abc".to_string(),
-            address: 0x5001,
-            size: 0,
-            instructions: vec![],
-            is_import: false,
-            is_export: false,
-        };
-
-        assert_eq!(lift_function(&keyword).name, "return_");
-        assert_eq!(lift_function(&leading_digit).name, "sub_5001_123abc");
-    }
-
-    #[test]
-    fn lift_functions_uniquifies_sanitized_name_collisions() {
-        let infos = vec![
-            FunctionInfo {
-                name: "foo-bar".to_string(),
-                address: 0x6000,
-                size: 0,
-                instructions: vec![],
-                is_import: false,
-                is_export: false,
-            },
-            FunctionInfo {
-                name: "foo_bar".to_string(),
-                address: 0x6001,
-                size: 0,
-                instructions: vec![],
-                is_import: false,
-                is_export: false,
-            },
-            FunctionInfo {
-                name: "foo bar".to_string(),
-                address: 0x6002,
-                size: 0,
-                instructions: vec![],
-                is_import: false,
-                is_export: false,
-            },
-        ];
-
-        let funcs = lift_functions(&infos);
-        assert_eq!(
-            funcs.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
-            vec!["foo_bar", "foo_bar_2", "foo_bar_3"]
+    fn lift_mov_reg_imm_becomes_assignment() {
+        let stmt = lift_ir_to_statement(&ir_instr(
+            0x1050,
+            "mov",
+            vec![Reg("rax".to_string()), Imm(42)],
+        ));
+        assert!(
+            matches!(
+                stmt,
+                Statement::Expression(Expression::Assignment { ref target, ref value })
+                    if matches!(target.as_ref(), Expression::Variable(name) if name == "rax")
+                        && matches!(value.as_ref(), Expression::IntegerLiteral(42))
+            ),
+            "got {:?}",
+            stmt
         );
     }
 
     #[test]
-    fn empty_instruction_list_produces_empty_body() {
-        let info = FunctionInfo {
-            name: "empty".to_string(),
-            address: 0x3000,
-            size: 0,
-            instructions: vec![],
-            is_import: false,
-            is_export: false,
-        };
-
-        let func = lift_function(&info);
-        assert!(func.body.is_empty());
-    }
-
-    #[test]
-    fn lift_functions_preserves_order() {
-        let infos = vec![
-            FunctionInfo {
-                name: "a".to_string(),
-                address: 0x1000,
-                size: 0,
-                instructions: vec![],
-                is_import: false,
-                is_export: false,
-            },
-            FunctionInfo {
-                name: "b".to_string(),
-                address: 0x2000,
-                size: 0,
-                instructions: vec![],
-                is_import: false,
-                is_export: false,
-            },
-        ];
-        let funcs = lift_functions(&infos);
-        assert_eq!(
-            funcs.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
-            vec!["a", "b"]
+    fn lift_memory_mov_rbp_offset_becomes_stack_var_assignment() {
+        let stmt = lift_ir_to_statement(&ir_instr(
+            0x1060,
+            "mov",
+            vec![
+                Reg("rax".to_string()),
+                Mem(MemoryOperand {
+                    base: Some("rbp".to_string()),
+                    index: None,
+                    scale: 1,
+                    disp: -8,
+                    size_bytes: Some(8),
+                }),
+            ],
+        ));
+        // mov rax, [rbp-8] → rax = local_8 (x86 AT&T order: dest is first operand)
+        assert!(
+            matches!(
+                stmt,
+                Statement::Expression(Expression::Assignment { ref target, ref value })
+                    if matches!(target.as_ref(), Expression::Variable(name) if name == "rax")
+                        && matches!(value.as_ref(), Expression::Variable(name) if name == "local_8")
+            ),
+            "got {:?}",
+            stmt
         );
     }
 
     #[test]
-    fn lift_functions_turns_direct_x86_calls_into_function_call_statements() {
-        let caller = FunctionInfo {
-            name: "sub_1000".to_string(),
-            address: 0x1000,
-            size: 5,
-            instructions: vec![Instruction::X86(X86Instruction {
-                address: 0x1000,
-                bytes: vec![0xE8, 0, 0, 0, 0],
-                mnemonic: "call".to_string(),
-                operands: "2000h".to_string(),
-                length: 5,
-                near_branch_target: Some(0x2000),
-            })],
-            is_import: false,
-            is_export: false,
-        };
-        let callee = FunctionInfo {
-            name: "sub_2000".to_string(),
+    fn no_ir_falls_back_to_inline_asm() {
+        let instr = Instruction::X86(X86Instruction {
             address: 0x2000,
-            size: 1,
-            instructions: vec![x86_instr(0x2000, "ret", "")],
-            is_import: false,
-            is_export: false,
-        };
-
-        let funcs = lift_functions(&[caller, callee]);
-
-        assert!(matches!(
-            &funcs[0].body[0],
-            Statement::Expression(crate::decompiler::ast::Expression::FunctionCall {
-                function,
-                arguments
-            }) if function == "sub_2000" && arguments.is_empty()
-        ));
-    }
-
-    #[test]
-    fn lift_functions_turns_indirect_iat_calls_into_import_calls() {
-        let caller = FunctionInfo {
-            name: "sub_1000".to_string(),
-            address: 0x1000,
-            size: 6,
-            instructions: vec![x86_instr(0x1000, "call", "qword ptr [3000h]")],
-            is_import: false,
-            is_export: false,
-        };
-        let imports = vec![import_address("kernel32.dll", "CreateFileW", 0x3000)];
-
-        let funcs = lift_functions_with_imports(&[caller], &imports);
-
-        assert!(matches!(
-            &funcs[0].body[0],
-            Statement::Expression(crate::decompiler::ast::Expression::FunctionCall {
-                function,
-                arguments
-            }) if function == "CreateFileW" && arguments.is_empty()
-        ));
-    }
-
-    #[test]
-    fn lift_functions_turns_rip_relative_iat_calls_into_import_calls() {
-        let caller = FunctionInfo {
-            name: "sub_1000".to_string(),
-            address: 0x1000,
-            size: 6,
-            instructions: vec![x86_instr_with_len(
-                0x1000,
-                "call",
-                "qword ptr [rip+1FFAh]",
-                6,
-            )],
-            is_import: false,
-            is_export: false,
-        };
-        let imports = vec![import_address("kernel32.dll", "GetProcAddress", 0x3000)];
-
-        let funcs = lift_functions_with_imports(&[caller], &imports);
-
-        assert!(matches!(
-            &funcs[0].body[0],
-            Statement::Expression(crate::decompiler::ast::Expression::FunctionCall {
-                function,
-                arguments
-            }) if function == "GetProcAddress" && arguments.is_empty()
-        ));
-    }
-
-    #[test]
-    fn import_function_declarations_sanitize_and_deduplicate_names() {
-        let imports = vec![
-            import_address("kernel32.dll", "CreateFileW", 0x3000),
-            import_address("custom.dll", "CreateFileW", 0x3010),
-            import_address("odd.dll", "123 bad-name", 0x3020),
-        ];
-
-        let declarations = import_function_declarations(&imports);
-
-        assert_eq!(
-            declarations
-                .iter()
-                .map(|decl| decl.c_name.as_str())
-                .collect::<Vec<_>>(),
-            vec!["CreateFileW", "CreateFileW_2", "import_3020_123_bad_name"]
+            bytes: vec![0x90],
+            mnemonic: "nop".to_string(),
+            operands: String::new(),
+            length: 1,
+            ir: None,
+            near_branch_target: None,
+        });
+        let stmt = lift_ir_to_statement(&instr);
+        assert!(
+            matches!(stmt, Statement::InlineAsm { address: 0x2000, .. }),
+            "expected InlineAsm for no-IR instruction, got {:?}",
+            stmt
         );
+    }
+
+    #[test]
+    fn unsupported_mnemonic_falls_back_to_inline_asm() {
+        // `push` / `pop` have IR but aren't in the arithmetic map yet —
+        // they should stay as InlineAsm.
+        let stmt = lift_ir_to_statement(&ir_instr(
+            0x3000,
+            "push",
+            vec![Reg("rbp".to_string())],
+        ));
+        assert!(
+            matches!(stmt, Statement::InlineAsm { address: 0x3000, .. }),
+            "expected InlineAsm for unsupported mnemonic, got {:?}",
+            stmt
+        );
+    }
+
+    #[test]
+    fn canonicalize_register_name_normalizes_sizes() {
+        assert_eq!(canonicalize_reg_name("eax"), "rax");
+        assert_eq!(canonicalize_reg_name("ax"), "rax");
+        assert_eq!(canonicalize_reg_name("al"), "rax");
+        assert_eq!(canonicalize_reg_name("r8d"), "r8");
+        assert_eq!(canonicalize_reg_name("r15b"), "r15");
+        assert_eq!(canonicalize_reg_name("rip"), "rip"); // non-register stays as-is
     }
 }

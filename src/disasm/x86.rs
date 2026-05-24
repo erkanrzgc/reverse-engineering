@@ -1,6 +1,7 @@
 //! x86/x64 disassembler
 
 use crate::utils::{Error, Result};
+use crate::disasm::ir::{InstructionIR, MemoryOperand, Operand};
 use iced_x86::{
     Decoder, DecoderOptions, Formatter, Instruction as IcedInstruction, IntelFormatter,
 };
@@ -64,6 +65,7 @@ impl X86Disassembler {
                 mnemonic,
                 operands,
                 length: instr.len(),
+                ir: Some(decode_ir(&instr)),
                 // Structured branch target (0 if not a near branch)
                 near_branch_target: if instr.is_jmp_near()
                     || instr.is_jmp_short()
@@ -90,6 +92,8 @@ pub struct X86Instruction {
     pub mnemonic: String,
     pub operands: String,
     pub length: usize,
+    /// Minimal semantic representation of the instruction.
+    pub ir: Option<InstructionIR>,
     /// Structured branch target for near jmp/jcc/call, if applicable.
     pub near_branch_target: Option<u64>,
 }
@@ -144,6 +148,61 @@ impl X86Instruction {
     }
 }
 
+fn decode_ir(instr: &IcedInstruction) -> InstructionIR {
+    let op = format!("{:?}", instr.mnemonic()).to_ascii_lowercase();
+    let mut operands = Vec::new();
+    for idx in 0..instr.op_count() {
+        operands.push(decode_operand(instr, idx));
+    }
+    InstructionIR {
+        address: instr.ip(),
+        op,
+        operands,
+    }
+}
+
+fn decode_operand(instr: &IcedInstruction, idx: u32) -> Operand {
+    use iced_x86::OpKind;
+
+    match instr.op_kind(idx) {
+        OpKind::Register => Operand::Reg(format!("{:?}", instr.op_register(idx)).to_ascii_lowercase()),
+        OpKind::Immediate8 => Operand::Imm(instr.immediate8() as i8 as i64),
+        OpKind::Immediate16 => Operand::Imm(instr.immediate16() as i16 as i64),
+        OpKind::Immediate32 => Operand::Imm(instr.immediate32() as i32 as i64),
+        OpKind::Immediate64 => Operand::Imm(instr.immediate64() as i64),
+        OpKind::Immediate8to16 => Operand::Imm(instr.immediate8to16() as i16 as i64),
+        OpKind::Immediate8to32 => Operand::Imm(instr.immediate8to32() as i32 as i64),
+        OpKind::Immediate8to64 => Operand::Imm(instr.immediate8to64() as i64),
+        OpKind::Immediate32to64 => Operand::Imm(instr.immediate32to64() as i64),
+        OpKind::Memory => Operand::Mem(MemoryOperand {
+            base: {
+                let base = instr.memory_base();
+                if base == iced_x86::Register::None {
+                    None
+                } else {
+                    Some(format!("{:?}", base).to_ascii_lowercase())
+                }
+            },
+            index: {
+                let index = instr.memory_index();
+                if index == iced_x86::Register::None {
+                    None
+                } else {
+                    Some(format!("{:?}", index).to_ascii_lowercase())
+                }
+            },
+            scale: instr.memory_index_scale() as u8,
+            disp: instr.memory_displacement64() as i64,
+            size_bytes: {
+                let size = instr.memory_size();
+                let bytes = size.size() as u32;
+                if bytes == 0 { None } else { Some(bytes) }
+            },
+        }),
+        _ => Operand::Other(format!("{:?}", instr.op_kind(idx)).to_ascii_lowercase()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,6 +214,7 @@ mod tests {
             mnemonic: mnemonic.to_string(),
             operands: String::new(),
             length: 0,
+            ir: None,
             near_branch_target: None,
         }
     }

@@ -87,6 +87,7 @@ pub struct ControlFlowGraph {
     graph: DiGraph<BasicBlock, EdgeType>,
     entry: Option<NodeIndex>,
     address_to_node: HashMap<u64, NodeIndex>,
+    address_to_location: HashMap<u64, (NodeIndex, usize)>,
 }
 
 impl ControlFlowGraph {
@@ -96,6 +97,7 @@ impl ControlFlowGraph {
             graph: DiGraph::new(),
             entry: None,
             address_to_node: HashMap::new(),
+            address_to_location: HashMap::new(),
         }
     }
 
@@ -179,6 +181,9 @@ impl ControlFlowGraph {
                 predecessors: Vec::new(),
             });
             self.address_to_node.insert(*address, node);
+            for (idx, instr) in instrs.iter().enumerate() {
+                self.address_to_location.insert(instr.address(), (node, idx));
+            }
 
             if self.entry.is_none() {
                 self.entry = Some(node);
@@ -315,6 +320,21 @@ impl ControlFlowGraph {
     pub fn graph(&self) -> &DiGraph<BasicBlock, EdgeType> {
         &self.graph
     }
+
+    /// Fetch instruction by its address (if present in the decoded stream).
+    pub fn instruction_by_address(&self, address: u64) -> Option<&Instruction> {
+        let (node, idx) = self.address_to_location.get(&address).copied()?;
+        self.graph.node_weight(node)?.instructions.get(idx)
+    }
+
+    /// Fetch the instruction immediately preceding `address` within the same basic block.
+    pub fn previous_instruction_in_block(&self, address: u64) -> Option<&Instruction> {
+        let (node, idx) = self.address_to_location.get(&address).copied()?;
+        if idx == 0 {
+            return None;
+        }
+        self.graph.node_weight(node)?.instructions.get(idx - 1)
+    }
 }
 
 impl Default for ControlFlowGraph {
@@ -335,6 +355,7 @@ mod tests {
             mnemonic: mnemonic.to_string(),
             operands: String::new(),
             length: 1,
+            ir: None,
             near_branch_target: target,
         }
     }

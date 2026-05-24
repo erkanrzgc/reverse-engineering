@@ -7,7 +7,7 @@
 
 use crate::analysis::TypeInfo;
 use crate::decompiler::ast::{BinaryOperator, Expression, Function, Statement};
-use crate::disasm::{ControlFlowGraph, EdgeType};
+use crate::disasm::{ControlFlowGraph, EdgeType, Instruction, InstructionIR, MemoryOperand, Operand};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -149,7 +149,7 @@ fn structure_terminal_if_else(
 
         if block_ends_in_return(true_block) && block_ends_in_return(false_block) {
             if let Some(rewrite) =
-                terminal_if_else_rewrite(function, head_range, true_range, false_range)
+                terminal_if_else_rewrite(function, cfg, head_range, true_range, false_range)
             {
                 rewrites.push(rewrite);
             }
@@ -198,6 +198,7 @@ struct IfRewrite {
 
 fn terminal_if_else_rewrite(
     function: &Function,
+    cfg: &ControlFlowGraph,
     head_range: (usize, usize),
     true_range: (usize, usize),
     false_range: (usize, usize),
@@ -209,7 +210,8 @@ fn terminal_if_else_rewrite(
         return None;
     }
 
-    let condition = branch_condition(function, head_range.0)?;
+    let condition = branch_condition_with_cfg(function, cfg, head_range.0)
+        .or_else(|| branch_condition(function, head_range.0))?;
     let then_block = function.body[true_range.0..=true_range.1].to_vec();
     let else_block = function.body[false_range.0..=false_range.1].to_vec();
 
@@ -246,7 +248,8 @@ fn diamond_if_else_rewrite(
         return None;
     }
 
-    let condition = branch_condition(function, head_range.0)?;
+    let condition = branch_condition_with_cfg(function, cfg, head_range.0)
+        .or_else(|| branch_condition(function, head_range.0))?;
     let then_block = payload_statements(function, true_exit.payload);
     let else_block = payload_statements(function, false_exit.payload);
 
@@ -381,6 +384,31 @@ fn branch_condition(function: &Function, branch_index: usize) -> Option<Expressi
     )))
 }
 
+fn branch_condition_with_cfg(
+    function: &Function,
+    cfg: &ControlFlowGraph,
+    branch_index: usize,
+) -> Option<Expression> {
+    let Statement::InlineAsm { address, disasm } = function.body.get(branch_index)? else {
+        return None;
+    };
+
+    if let Some(recovered) = recovered_condition_ir(cfg, *address) {
+        return Some(recovered);
+    }
+
+    // Fallback to the legacy string-based recovery.
+    if let Some(recovered) = recovered_condition(function, branch_index, disasm) {
+        return Some(recovered);
+    }
+
+    Some(Expression::Unknown(format!(
+        "/* condition: 0x{:X} {} */ 1",
+        address,
+        sanitize_comment(disasm)
+    )))
+}
+
 fn payload_statements(function: &Function, payload: Option<(usize, usize)>) -> Vec<Statement> {
     payload
         .map(|(start, end)| function.body[start..=end].to_vec())
@@ -419,6 +447,204 @@ fn recovered_condition(
         _ => None,
     }
 }
+
+fn recovered_condition_ir(cfg: &ControlFlowGraph, branch_address: u64) -> Option<Expression> {
+    let branch_instr = cfg.instruction_by_address(branch_address)?;
+    let setup_instr = cfg.previous_instruction_in_block(branch_address)?;
+
+    let (setup_ir, setup_text) = instruction_ir_and_text(setup_instr)?;
+    let (branch_ir, branch_text) = instruction_ir_and_text(branch_instr)?;
+
+    match setup_ir.op.as_str() {
+        "cmp" => recover_cmp_condition_ir(&setup_ir, &setup_text, &branch_ir, &branch_text),
+        "test" => recover_test_condition_ir(&setup_ir, &setup_text, &branch_ir, &branch_text),
+        _ => None,
+    }
+}
+
+fn instruction_ir_and_text(instr: &Instruction) -> Option<(InstructionIR, String)> {
+    match instr {
+        Instruction::X86(x) => Some((x.ir.clone()?, x.to_string())),
+        Instruction::Arm(_) => None,
+    }
+}
+
+fn recover_cmp_condition_ir(
+    setup: &InstructionIR,
+    setup_text: &str,
+    branch: &InstructionIR,
+    branch_text: &str,
+) -> Option<Expression> {
+    let left = setup.operands.get(0)?;
+    let right = setup.operands.get(1)?;
+    let op = cmp_operator_for_branch(branch.op.as_str())?;
+
+    let expression_text = format!(
+        "{} {} {}",
+        operand_to_text(left),
+        op.symbol(),
+        operand_to_text(right)
+    );
+
+    let Some(left_expr) = operand_to_expression(left) else {
+        return Some(comment_condition(
+            &expression_text,
+            setup_text,
+            branch_text,
+        ));
+    };
+    let Some(right_expr) = operand_to_expression(right) else {
+        return Some(comment_condition(
+            &expression_text,
+            setup_text,
+            branch_text,
+        ));
+    };
+
+    Some(Expression::BinaryOperation {
+        op,
+        left: Box::new(left_expr),
+        right: Box::new(right_expr),
+    })
+}
+
+fn recover_test_condition_ir(
+    setup: &InstructionIR,
+    setup_text: &str,
+    branch: &InstructionIR,
+    branch_text: &str,
+) -> Option<Expression> {
+    let left = setup.operands.get(0)?;
+    let right = setup.operands.get(1)?;
+    let compares_equal_zero = branch_is_zero(branch.op.as_str())?;
+    let op = if compares_equal_zero {
+        BinaryOperator::Equal
+    } else {
+        BinaryOperator::NotEqual
+    };
+
+    if operand_to_text(left).eq_ignore_ascii_case(&operand_to_text(right)) {
+        let expression_text = format!("{} {} 0", operand_to_text(left), op.symbol());
+        let Some(left_expr) = operand_to_expression(left) else {
+            return Some(comment_condition(
+                &expression_text,
+                setup_text,
+                branch_text,
+            ));
+        };
+        return Some(Expression::BinaryOperation {
+            op,
+            left: Box::new(left_expr),
+            right: Box::new(Expression::IntegerLiteral(0)),
+        });
+    }
+
+    let expression_text = format!(
+        "({} & {}) {} 0",
+        operand_to_text(left),
+        operand_to_text(right),
+        op.symbol()
+    );
+
+    let Some(left_expr) = operand_to_expression(left) else {
+        return Some(comment_condition(
+            &expression_text,
+            setup_text,
+            branch_text,
+        ));
+    };
+    let Some(right_expr) = operand_to_expression(right) else {
+        return Some(comment_condition(
+            &expression_text,
+            setup_text,
+            branch_text,
+        ));
+    };
+
+    Some(Expression::BinaryOperation {
+        op,
+        left: Box::new(Expression::BinaryOperation {
+            op: BinaryOperator::BitwiseAnd,
+            left: Box::new(left_expr),
+            right: Box::new(right_expr),
+        }),
+        right: Box::new(Expression::IntegerLiteral(0)),
+    })
+}
+
+fn operand_to_text(operand: &Operand) -> String {
+    match operand {
+        Operand::Reg(r) => r.clone(),
+        Operand::Imm(v) => format!("{v}"),
+        Operand::Mem(mem) => {
+            let mut out = String::from("[");
+            if let Some(base) = mem.base.as_ref() {
+                out.push_str(base);
+            }
+            if mem.disp != 0 {
+                if mem.disp > 0 {
+                    out.push_str(&format!("+0x{:X}", mem.disp));
+                } else {
+                    out.push_str(&format!("-0x{:X}", -mem.disp));
+                }
+            }
+            out.push(']');
+            out
+        }
+        Operand::Other(s) => s.clone(),
+    }
+}
+
+fn operand_to_expression(operand: &Operand) -> Option<Expression> {
+    match operand {
+        Operand::Reg(r) => Some(Expression::Variable(canonicalize_register_name(r))),
+        Operand::Imm(v) => Some(Expression::IntegerLiteral(*v)),
+        Operand::Mem(mem) => stack_variable_name_from_mem(mem).map(Expression::Variable),
+        Operand::Other(_) => None,
+    }
+}
+
+fn stack_variable_name_from_mem(mem: &MemoryOperand) -> Option<String> {
+    let base = mem.base.as_deref()?.to_ascii_lowercase();
+    if matches!(base.as_str(), "rbp" | "ebp") {
+        if mem.disp < 0 {
+            Some(format!("local_{:x}", (-mem.disp) as u64))
+        } else {
+            Some(format!("arg_{:x}", mem.disp as u64))
+        }
+    } else if matches!(base.as_str(), "rsp" | "esp") {
+        if mem.disp < 0 {
+            Some(format!("stack_m_{:x}", (-mem.disp) as u64))
+        } else {
+            Some(format!("stack_{:x}", mem.disp as u64))
+        }
+    } else {
+        None
+    }
+}
+
+// ---------------------------------------------------------------------------
+// LEGACY string-based condition recovery.
+//
+// These helpers (`recover_cmp_condition`, `recover_test_condition`, and their
+// supporting `operand_expression` / `assignment_target_expression` /
+// `split_operands` / `split_instruction`) reconstruct condition expressions
+// directly from the formatted disasm strings of the previous instruction.
+//
+// They are retained for two reasons:
+//
+//   1. `branch_condition_with_cfg` prefers the IR-aware path
+//      (`recovered_condition_ir`, see above) but falls back here whenever the
+//      lifter has not yet populated `X86Instruction::ir` for an instruction.
+//   2. `branch_condition` (the non-CFG entry point used by `structure_function`)
+//      has no CFG context, and the IR-only path requires the CFG to locate the
+//      setup/branch pair.
+//
+// The IR variants in `recover_cmp_condition_ir` / `recover_test_condition_ir`
+// are the preferred long-term implementation. As coverage of the IR producer
+// in `disasm::x86::to_ir()` grows, the call sites here will gradually become
+// dead code and can be removed without affecting test output.
+// ---------------------------------------------------------------------------
 
 fn recover_cmp_condition(
     setup_disasm: &str,
@@ -951,5 +1177,408 @@ impl BinaryOperatorText for BinaryOperator {
             BinaryOperator::BitwiseAnd => "&",
             _ => "?",
         }
+    }
+}
+
+#[cfg(test)]
+mod ir_condition_recovery_tests {
+    //! Direct unit tests for the IR-driven helpers in this file. End-to-end
+    //! `structure_function*` integration tests live in `decompiler::mod`.
+
+    use super::*;
+
+    fn reg(name: &str) -> Operand {
+        Operand::Reg(name.to_string())
+    }
+
+    fn imm(value: i64) -> Operand {
+        Operand::Imm(value)
+    }
+
+    fn mem(base: Option<&str>, disp: i64) -> Operand {
+        Operand::Mem(MemoryOperand {
+            base: base.map(|b| b.to_string()),
+            index: None,
+            scale: 1,
+            disp,
+            size_bytes: None,
+        })
+    }
+
+    fn ir(address: u64, op: &str, operands: Vec<Operand>) -> InstructionIR {
+        InstructionIR {
+            address,
+            op: op.to_string(),
+            operands,
+        }
+    }
+
+    // ---- cmp_operator_for_branch ----
+
+    #[test]
+    fn cmp_operator_for_branch_maps_every_documented_jcc_alias() {
+        // Equality
+        for m in ["je", "jz"] {
+            assert_eq!(cmp_operator_for_branch(m), Some(BinaryOperator::Equal), "{m}");
+        }
+        for m in ["jne", "jnz"] {
+            assert_eq!(
+                cmp_operator_for_branch(m),
+                Some(BinaryOperator::NotEqual),
+                "{m}"
+            );
+        }
+        // Signed AND unsigned less-than family collapse to LessThan; this is
+        // intentional because the lifter doesn't yet carry signedness.
+        for m in ["jl", "jnge", "jb", "jnae", "jc"] {
+            assert_eq!(
+                cmp_operator_for_branch(m),
+                Some(BinaryOperator::LessThan),
+                "{m}"
+            );
+        }
+        for m in ["jle", "jng", "jbe", "jna"] {
+            assert_eq!(
+                cmp_operator_for_branch(m),
+                Some(BinaryOperator::LessThanOrEqual),
+                "{m}"
+            );
+        }
+        for m in ["jg", "jnle", "ja", "jnbe"] {
+            assert_eq!(
+                cmp_operator_for_branch(m),
+                Some(BinaryOperator::GreaterThan),
+                "{m}"
+            );
+        }
+        for m in ["jge", "jnl", "jae", "jnb", "jnc"] {
+            assert_eq!(
+                cmp_operator_for_branch(m),
+                Some(BinaryOperator::GreaterThanOrEqual),
+                "{m}"
+            );
+        }
+    }
+
+    #[test]
+    fn cmp_operator_for_branch_returns_none_for_unconditional_or_unknown_mnemonics() {
+        assert!(cmp_operator_for_branch("jmp").is_none());
+        assert!(cmp_operator_for_branch("call").is_none());
+        assert!(cmp_operator_for_branch("ret").is_none());
+        assert!(cmp_operator_for_branch("nop").is_none());
+        // Case-sensitive on purpose: branch mnemonics from the IR are already lowercase.
+        assert!(cmp_operator_for_branch("JE").is_none());
+    }
+
+    // ---- branch_is_zero ----
+
+    #[test]
+    fn branch_is_zero_returns_true_for_zero_branches_and_false_for_nonzero_branches() {
+        assert_eq!(branch_is_zero("je"), Some(true));
+        assert_eq!(branch_is_zero("jz"), Some(true));
+        assert_eq!(branch_is_zero("jne"), Some(false));
+        assert_eq!(branch_is_zero("jnz"), Some(false));
+    }
+
+    #[test]
+    fn branch_is_zero_returns_none_for_comparison_branches_that_test_cannot_express() {
+        // `test` only sets ZF/SF/PF — signed/unsigned ordering branches are not
+        // recoverable from a `test reg,reg` setup, so these must return None.
+        for m in ["jl", "jg", "jle", "jge", "ja", "jb", "jnz_typo"] {
+            assert!(
+                branch_is_zero(m).is_none(),
+                "branch_is_zero({m}) must reject non-zero-flag branches"
+            );
+        }
+    }
+
+    // ---- operand_to_text ----
+
+    #[test]
+    fn operand_to_text_renders_registers_and_immediates_verbatim() {
+        assert_eq!(operand_to_text(&reg("rax")), "rax");
+        assert_eq!(operand_to_text(&imm(42)), "42");
+        assert_eq!(operand_to_text(&imm(-7)), "-7");
+    }
+
+    #[test]
+    fn operand_to_text_renders_memory_with_sign_aware_hex_displacement() {
+        assert_eq!(operand_to_text(&mem(Some("rbp"), 0)), "[rbp]");
+        assert_eq!(operand_to_text(&mem(Some("rbp"), -0x10)), "[rbp-0x10]");
+        assert_eq!(operand_to_text(&mem(Some("rsp"), 0x20)), "[rsp+0x20]");
+        // Bare displacement with no base.
+        assert_eq!(operand_to_text(&mem(None, 0x401000)), "[+0x401000]");
+    }
+
+    #[test]
+    fn operand_to_text_passes_other_variant_through_unchanged() {
+        assert_eq!(
+            operand_to_text(&Operand::Other("xmmword ptr [rip+10h]".to_string())),
+            "xmmword ptr [rip+10h]"
+        );
+    }
+
+    // ---- operand_to_expression ----
+
+    #[test]
+    fn operand_to_expression_canonicalizes_register_aliases_to_class_name() {
+        // `eax` and `r8d` are sub-register views; classified to rax/r8.
+        assert!(matches!(
+            operand_to_expression(&reg("eax")),
+            Some(Expression::Variable(ref n)) if n == "rax"
+        ));
+        assert!(matches!(
+            operand_to_expression(&reg("r8d")),
+            Some(Expression::Variable(ref n)) if n == "r8"
+        ));
+    }
+
+    #[test]
+    fn operand_to_expression_produces_integer_literal_for_immediate() {
+        assert!(matches!(
+            operand_to_expression(&imm(0)),
+            Some(Expression::IntegerLiteral(0))
+        ));
+        assert!(matches!(
+            operand_to_expression(&imm(-1)),
+            Some(Expression::IntegerLiteral(-1))
+        ));
+    }
+
+    #[test]
+    fn operand_to_expression_produces_named_stack_variable_for_rbp_relative_memory() {
+        assert!(matches!(
+            operand_to_expression(&mem(Some("rbp"), -0x10)),
+            Some(Expression::Variable(ref n)) if n == "local_10"
+        ));
+        assert!(matches!(
+            operand_to_expression(&mem(Some("rsp"), 0x20)),
+            Some(Expression::Variable(ref n)) if n == "stack_20"
+        ));
+    }
+
+    #[test]
+    fn operand_to_expression_returns_none_for_non_stack_memory_and_other_operands() {
+        // [rax] is a heap/data deref, not a stack slot.
+        assert!(operand_to_expression(&mem(Some("rax"), 0)).is_none());
+        assert!(operand_to_expression(&mem(None, 0x401000)).is_none());
+        assert!(operand_to_expression(&Operand::Other("xmm0".into())).is_none());
+    }
+
+    // ---- stack_variable_name_from_mem ----
+
+    #[test]
+    fn stack_variable_name_from_mem_uses_local_for_negative_rbp_and_arg_for_positive_rbp() {
+        let cases = [
+            (Some("rbp"), -0x08i64, "local_8"),
+            (Some("RBP"), -0x100, "local_100"),
+            (Some("ebp"), -0x4, "local_4"),
+            (Some("rbp"), 0x10, "arg_10"),
+            (Some("ebp"), 0x20, "arg_20"),
+        ];
+        for (base, disp, expected) in cases {
+            assert_eq!(
+                stack_variable_name_from_mem(&MemoryOperand {
+                    base: base.map(str::to_string),
+                    index: None,
+                    scale: 1,
+                    disp,
+                    size_bytes: None,
+                })
+                .as_deref(),
+                Some(expected),
+                "base={base:?} disp={disp:#x}"
+            );
+        }
+    }
+
+    #[test]
+    fn stack_variable_name_from_mem_uses_stack_prefixes_for_rsp_relative_slots() {
+        // Negative rsp → stack_m_*, positive rsp → stack_*.
+        assert_eq!(
+            stack_variable_name_from_mem(&MemoryOperand {
+                base: Some("rsp".into()),
+                index: None,
+                scale: 1,
+                disp: -0x18,
+                size_bytes: None,
+            })
+            .as_deref(),
+            Some("stack_m_18")
+        );
+        assert_eq!(
+            stack_variable_name_from_mem(&MemoryOperand {
+                base: Some("rsp".into()),
+                index: None,
+                scale: 1,
+                disp: 0x28,
+                size_bytes: None,
+            })
+            .as_deref(),
+            Some("stack_28")
+        );
+    }
+
+    #[test]
+    fn stack_variable_name_from_mem_returns_none_for_general_purpose_or_missing_base() {
+        // [rax], [rdi], baseless absolute — none are stack slots.
+        for base in [Some("rax"), Some("rdi"), Some("r12"), None] {
+            assert!(
+                stack_variable_name_from_mem(&MemoryOperand {
+                    base: base.map(str::to_string),
+                    index: None,
+                    scale: 1,
+                    disp: 0,
+                    size_bytes: None,
+                })
+                .is_none(),
+                "base={base:?} should NOT name a stack variable"
+            );
+        }
+    }
+
+    // ---- recover_cmp_condition_ir end-to-end ----
+
+    #[test]
+    fn recover_cmp_condition_ir_with_reg_reg_setup_produces_typed_binary_op() {
+        let setup = ir(0x1000, "cmp", vec![reg("rax"), reg("rbx")]);
+        let branch = ir(0x1003, "je", vec![]);
+        let expr = recover_cmp_condition_ir(&setup, "cmp rax, rbx", &branch, "je 0x2000")
+            .expect("cmp+je must produce a condition expression");
+
+        let Expression::BinaryOperation { op, left, right } = expr else {
+            panic!("expected BinaryOperation, got something else");
+        };
+        assert_eq!(op, BinaryOperator::Equal);
+        assert!(matches!(left.as_ref(), Expression::Variable(n) if n == "rax"));
+        assert!(matches!(right.as_ref(), Expression::Variable(n) if n == "rbx"));
+    }
+
+    #[test]
+    fn recover_cmp_condition_ir_with_reg_imm_setup_uses_integer_literal_right_operand() {
+        // `cmp rax, 0` + `jne` → rax != 0
+        let setup = ir(0x1000, "cmp", vec![reg("rax"), imm(0)]);
+        let branch = ir(0x1003, "jne", vec![]);
+        let expr = recover_cmp_condition_ir(&setup, "cmp rax, 0", &branch, "jne 0x2000")
+            .expect("cmp+jne must produce a condition");
+
+        let Expression::BinaryOperation { op, right, .. } = expr else {
+            panic!("expected BinaryOperation");
+        };
+        assert_eq!(op, BinaryOperator::NotEqual);
+        assert!(matches!(right.as_ref(), Expression::IntegerLiteral(0)));
+    }
+
+    #[test]
+    fn recover_cmp_condition_ir_falls_back_to_comment_when_an_operand_is_non_expressible() {
+        // `[rax]` is not a stack-frame memory, so operand_to_expression returns
+        // None — but the function must still produce a readable Unknown comment
+        // instead of dropping the condition altogether.
+        let setup = ir(0x1000, "cmp", vec![reg("rax"), mem(Some("rax"), 0)]);
+        let branch = ir(0x1003, "jl", vec![]);
+        let expr = recover_cmp_condition_ir(&setup, "cmp rax, [rax]", &branch, "jl 0x2000")
+            .expect("must fall back to a comment, not None");
+
+        match expr {
+            Expression::Unknown(text) => {
+                assert!(text.contains("condition:"), "got: {text}");
+                assert!(text.contains("rax < [rax]"), "got: {text}");
+            }
+            other => panic!("expected Unknown fallback, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn recover_cmp_condition_ir_returns_none_when_branch_mnemonic_is_unsupported() {
+        let setup = ir(0x1000, "cmp", vec![reg("rax"), reg("rbx")]);
+        let branch = ir(0x1003, "jmp", vec![]);
+        assert!(
+            recover_cmp_condition_ir(&setup, "cmp rax, rbx", &branch, "jmp 0x2000").is_none()
+        );
+    }
+
+    // ---- recover_test_condition_ir ----
+
+    #[test]
+    fn recover_test_condition_ir_for_self_test_emits_register_compared_to_zero() {
+        // test rax, rax + je → rax == 0
+        let setup = ir(0x1000, "test", vec![reg("rax"), reg("rax")]);
+        let branch = ir(0x1003, "je", vec![]);
+        let expr = recover_test_condition_ir(&setup, "test rax, rax", &branch, "je 0x2000")
+            .expect("test self + je must produce condition");
+
+        let Expression::BinaryOperation { op, left, right } = expr else {
+            panic!("expected BinaryOperation");
+        };
+        assert_eq!(op, BinaryOperator::Equal);
+        assert!(matches!(left.as_ref(), Expression::Variable(n) if n == "rax"));
+        assert!(matches!(right.as_ref(), Expression::IntegerLiteral(0)));
+    }
+
+    #[test]
+    fn recover_test_condition_ir_for_distinct_operands_emits_masked_compare_with_zero() {
+        // test rax, rbx + jnz → (rax & rbx) != 0
+        let setup = ir(0x1000, "test", vec![reg("rax"), reg("rbx")]);
+        let branch = ir(0x1003, "jnz", vec![]);
+        let expr = recover_test_condition_ir(&setup, "test rax, rbx", &branch, "jnz 0x2000")
+            .expect("test rax,rbx + jnz must produce condition");
+
+        let Expression::BinaryOperation { op, left, right } = expr else {
+            panic!("expected outer BinaryOperation");
+        };
+        assert_eq!(op, BinaryOperator::NotEqual);
+        assert!(matches!(right.as_ref(), Expression::IntegerLiteral(0)));
+
+        let Expression::BinaryOperation {
+            op: inner_op,
+            left: a,
+            right: b,
+        } = left.as_ref()
+        else {
+            panic!("expected inner BinaryAnd");
+        };
+        assert_eq!(*inner_op, BinaryOperator::BitwiseAnd);
+        assert!(matches!(a.as_ref(), Expression::Variable(n) if n == "rax"));
+        assert!(matches!(b.as_ref(), Expression::Variable(n) if n == "rbx"));
+    }
+
+    #[test]
+    fn recover_test_condition_ir_returns_none_when_branch_is_not_a_zero_flag_branch() {
+        // `test`+`jl` is meaningless — must return None rather than guess.
+        let setup = ir(0x1000, "test", vec![reg("rax"), reg("rax")]);
+        let branch = ir(0x1003, "jl", vec![]);
+        assert!(
+            recover_test_condition_ir(&setup, "test rax, rax", &branch, "jl 0x2000").is_none()
+        );
+    }
+
+    // ---- comment_condition sanitization ----
+
+    #[test]
+    fn comment_condition_escapes_block_comment_terminator_in_every_component() {
+        // The wrapper format itself emits a `/* ... */` around the content, so
+        // exactly one `*/` (the closing terminator) is legitimate. Any embedded
+        // `*/` from the inputs must be split to `* /` so the comment doesn't
+        // end early when the generated C is compiled.
+        let expr = comment_condition("a */ b", "cmp */ rax", "jne */ 0x2000");
+        let Expression::Unknown(text) = expr else {
+            panic!("expected Unknown");
+        };
+
+        assert_eq!(
+            text.matches("*/").count(),
+            1,
+            "exactly one (closing) `*/` allowed, got: {text}"
+        );
+        // The placeholder must still end with `1` so it remains a valid C
+        // truthy expression in the generated source.
+        assert!(text.trim_end().ends_with("*/ 1"), "got: {text}");
+        // Each sanitized component should appear as `* /` (with the inserted space).
+        assert!(text.contains("a * / b"), "expr was not sanitized: {text}");
+        assert!(text.contains("cmp * / rax"), "setup was not sanitized: {text}");
+        assert!(
+            text.contains("jne * / 0x2000"),
+            "branch was not sanitized: {text}"
+        );
     }
 }
