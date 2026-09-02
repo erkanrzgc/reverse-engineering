@@ -1,0 +1,99 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  RUST_VERSION: '1.87.0'
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            executable: reverse-engineering.exe
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            executable: reverse-engineering
+          - os: macos-13
+            target: x86_64-apple-darwin
+            executable: reverse-engineering
+          - os: macos-14
+            target: aarch64-apple-darwin
+            executable: reverse-engineering
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4.2.2
+
+      - name: Install Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@1.87.0
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build locked release binary
+        shell: bash
+        run: cargo build --locked --release --target "${{ matrix.target }}"
+
+      - name: Smoke test binary
+        shell: bash
+        run: |
+          binary="target/${{ matrix.target }}/release/${{ matrix.executable }}"
+          test -x "$binary"
+          "$binary" --version
+          "$binary" --help >/dev/null
+
+      - name: Package binary and documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          target='${{ matrix.target }}'
+          tag="$GITHUB_REF_NAME"
+          package_dir="$RUNNER_TEMP/reverse-engineering-v${tag#v}-$target"
+          output_dir="$RUNNER_TEMP/release"
+          archive="reverse-engineering-v${tag#v}-$target.tar.gz"
+          mkdir -p "$package_dir" "$output_dir"
+          cp "target/$target/release/${{ matrix.executable }}" "$package_dir/"
+          cp README.md LICENSE CHANGELOG.md "$package_dir/"
+          tar -C "$RUNNER_TEMP" -czf "$output_dir/$archive" "$(basename "$package_dir")"
+          (cd "$output_dir" && sha256sum "$archive" > "$archive.sha256")
+
+      - name: Upload target package
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            ${{ runner.temp }}/release/*.tar.gz
+            ${{ runner.temp }}/release/*.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download target packages
+        uses: actions/download-artifact@v4.1.8
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release and checksums
+        uses: softprops/action-gh-release@v2.2.2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.sha256
+          generate_release_notes: true
+          fail_on_unmatched_files: true
