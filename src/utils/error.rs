@@ -70,9 +70,9 @@ mod tests {
     }
 
     #[test]
-    fn io_error_converts_into_decompiler_error_via_from() {
+    fn io_error_converts_into_library_error_via_from() {
         // The `#[from] std::io::Error` derive guarantees `?` propagation works
-        // from any io::Result into a decompiler::Result.
+        // from any io::Result into a reverse_engineering::Result.
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "missing");
         let wrapped: Error = io_err.into();
         let rendered = wrapped.to_string();

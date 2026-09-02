@@ -11,7 +11,8 @@ pub mod structure;
 pub use ast::{AstNode, AstNodeType, Expression, Function, Statement};
 pub use c_generator::{CGenerator, CGeneratorConfig};
 pub use c_syntax::{
-    escape_c_string, quote_c_string, sanitize_c_comment, sanitize_c_identifier, unique_c_identifier,
+    escape_c_string, quote_c_string, sanitize_c_comment, sanitize_c_identifier,
+    sanitize_c_line_comment, unique_c_identifier,
 };
 pub use lifter::{
     import_function_declarations, lift_function, lift_functions, lift_functions_with_imports,

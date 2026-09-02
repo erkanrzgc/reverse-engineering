@@ -64,14 +64,31 @@ impl StringExtractor {
 
     /// Extract strings from binary data
     pub fn extract(&self, data: &[u8], base_address: u64) -> Vec<StringInfo> {
+        self.extract_with_limit(data, base_address, usize::MAX)
+    }
+
+    /// Extract at most `limit` strings, stopping the scan as soon as the
+    /// allowance is exhausted.
+    pub fn extract_with_limit(
+        &self,
+        data: &[u8],
+        base_address: u64,
+        limit: usize,
+    ) -> Vec<StringInfo> {
+        if limit == 0 {
+            return Vec::new();
+        }
+
         let mut strings = Vec::new();
         let mut seen = HashSet::new();
 
         // Extract ASCII/UTF-8 strings
-        self.extract_ascii_utf8(data, base_address, &mut strings, &mut seen);
+        self.extract_ascii_utf8(data, base_address, limit, &mut strings, &mut seen);
 
         // Extract UTF-16 strings
-        self.extract_utf16(data, base_address, &mut strings, &mut seen);
+        if strings.len() < limit {
+            self.extract_utf16(data, base_address, limit, &mut strings, &mut seen);
+        }
 
         strings
     }
@@ -81,6 +98,7 @@ impl StringExtractor {
         &self,
         data: &[u8],
         base_address: u64,
+        limit: usize,
         strings: &mut Vec<StringInfo>,
         seen: &mut HashSet<String>,
     ) {
@@ -107,6 +125,9 @@ impl StringExtractor {
                                     encoding: StringEncoding::Ascii,
                                     length: current.len(),
                                 });
+                                if strings.len() == limit {
+                                    return;
+                                }
                             }
                         }
                     }
@@ -126,6 +147,7 @@ impl StringExtractor {
         &self,
         data: &[u8],
         base_address: u64,
+        limit: usize,
         strings: &mut Vec<StringInfo>,
         seen: &mut HashSet<String>,
     ) {
@@ -168,6 +190,9 @@ impl StringExtractor {
                                     encoding: StringEncoding::Utf16Le,
                                     length: current.len() / 2,
                                 });
+                                if strings.len() == limit {
+                                    return;
+                                }
                             }
                         }
                     }
@@ -270,5 +295,22 @@ mod tests {
         let extractor = StringExtractor::new();
         assert!(extractor.extract(&[], 0).is_empty());
         assert!(extractor.extract(&[0x00], 0).is_empty());
+    }
+
+    #[test]
+    fn limited_extraction_returns_immediately_for_zero_allowance() {
+        let strings = StringExtractor::new().extract_with_limit(b"first\0second\0third\0", 0, 0);
+
+        assert!(strings.is_empty());
+    }
+
+    #[test]
+    fn limited_extraction_stops_at_the_extractor_boundary() {
+        let strings =
+            StringExtractor::new().extract_with_limit(b"first\0second\0third\0", 0x1000, 2);
+
+        assert_eq!(strings.len(), 2);
+        assert_eq!(strings[0].value, "first");
+        assert_eq!(strings[1].value, "second");
     }
 }

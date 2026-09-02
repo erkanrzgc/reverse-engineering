@@ -1,9 +1,10 @@
-use decompiler::analysis::functions::FunctionInfo;
-use decompiler::analysis::TypeInfo;
-use decompiler::decompiler::{
-    recover_function_signatures, structure_function_with_cfg, CGenerator, CGeneratorConfig, Function,
+use reverse_engineering::analysis::functions::FunctionInfo;
+use reverse_engineering::analysis::TypeInfo;
+use reverse_engineering::decompiler::{
+    recover_function_signatures, structure_function_with_cfg, CGenerator, CGeneratorConfig,
+    Function,
 };
-use decompiler::disasm::{ControlFlowGraph, X86Instruction};
+use reverse_engineering::disasm::{ControlFlowGraph, X86Instruction};
 
 fn x86(address: u64, mnemonic: &str, operands: &str, target: Option<u64>) -> X86Instruction {
     X86Instruction {
@@ -24,7 +25,7 @@ fn function_info(name: &str, instructions: Vec<X86Instruction>) -> FunctionInfo 
         size: instructions.iter().map(|i| i.length).sum(),
         instructions: instructions
             .into_iter()
-            .map(decompiler::disasm::control_flow::Instruction::X86)
+            .map(reverse_engineering::disasm::control_flow::Instruction::X86)
             .collect(),
         is_import: false,
         is_export: false,
@@ -38,10 +39,12 @@ fn func_from_inline(name: &str, body: Vec<(u64, &str)>) -> Function {
         parameters: vec![],
         body: body
             .into_iter()
-            .map(|(address, disasm)| decompiler::decompiler::ast::Statement::InlineAsm {
-                address,
-                disasm: disasm.to_string(),
-            })
+            .map(
+                |(address, disasm)| reverse_engineering::decompiler::ast::Statement::InlineAsm {
+                    address,
+                    disasm: disasm.to_string(),
+                },
+            )
             .collect(),
         is_variadic: false,
     }
@@ -116,10 +119,13 @@ fn golden_signature_recovery_promotes_rcx_and_rax_return() {
     )];
     // Signature recovery expects structured statements (Assignment/Return),
     // not raw InlineAsm placeholders.
-    decompiler::decompiler::structure_function(&mut functions[0]);
+    reverse_engineering::decompiler::structure_function(&mut functions[0]);
     let infos = vec![function_info(
         "sub_3000",
-        vec![x86(0x3000, "mov", "rax, rcx", None), x86(0x3001, "ret", "", None)],
+        vec![
+            x86(0x3000, "mov", "rax, rcx", None),
+            x86(0x3001, "ret", "", None),
+        ],
     )];
 
     recover_function_signatures(&mut functions, &infos, "PE/EXE", "x64");
@@ -130,4 +136,3 @@ fn golden_signature_recovery_promotes_rcx_and_rax_return() {
         "expected rcx param + u64 return, got:\n{c}"
     );
 }
-

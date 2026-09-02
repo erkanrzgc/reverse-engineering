@@ -384,10 +384,7 @@ mod tests {
             Expression::Variable("x".to_string()),
             lit(7),
         );
-        let func = run(
-            OptimizationLevel::Basic,
-            vec![Statement::Expression(expr)],
-        );
+        let func = run(OptimizationLevel::Basic, vec![Statement::Expression(expr)]);
         assert!(matches!(
             &func.body[..],
             [Statement::Expression(Expression::BinaryOperation { .. })]
@@ -625,10 +622,7 @@ mod tests {
 
     #[test]
     fn basic_level_does_not_prune_dead_code() {
-        let body = vec![
-            Statement::Return(None),
-            Statement::Expression(lit(42)),
-        ];
+        let body = vec![Statement::Return(None), Statement::Expression(lit(42))];
         let func = run(OptimizationLevel::Basic, body);
         assert_eq!(func.body.len(), 2);
     }

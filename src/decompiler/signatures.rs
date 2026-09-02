@@ -236,7 +236,10 @@ mod tests {
 
     #[test]
     fn canonical_register_rejects_non_register_tokens() {
-        assert!(canonical_register("rbp").is_none(), "rbp is not an arg register and is intentionally unrecognized here");
+        assert!(
+            canonical_register("rbp").is_none(),
+            "rbp is not an arg register and is intentionally unrecognized here"
+        );
         assert!(canonical_register("0x401000").is_none());
         assert!(canonical_register("").is_none());
         assert!(canonical_register("rax_typo").is_none());
@@ -270,10 +273,7 @@ mod tests {
         // read_registers), so rcx should not be picked up as a parameter.
         let func = info(
             "f",
-            vec![
-                x86(0x1000, "xor", "rcx, rcx"),
-                x86(0x1003, "ret", ""),
-            ],
+            vec![x86(0x1000, "xor", "rcx, rcx"), x86(0x1003, "ret", "")],
         );
         assert!(infer_parameters(&func, "PE/EXE", "x64").is_empty());
     }
@@ -394,7 +394,11 @@ mod tests {
         )];
 
         recover_function_signatures(&mut funcs, &infos, "PE/EXE", "x64");
-        let names: Vec<&str> = funcs[0].parameters.iter().map(|p| p.name.as_str()).collect();
+        let names: Vec<&str> = funcs[0]
+            .parameters
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
         assert_eq!(names, vec!["rcx"]);
 
         // Run again with a preset parameter: inference must NOT overwrite it.
@@ -403,7 +407,11 @@ mod tests {
             type_info: TypeInfo::I32,
         }];
         recover_function_signatures(&mut funcs, &infos, "PE/EXE", "x64");
-        let names: Vec<&str> = funcs[0].parameters.iter().map(|p| p.name.as_str()).collect();
+        let names: Vec<&str> = funcs[0]
+            .parameters
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
         assert_eq!(names, vec!["preset_arg"]);
     }
 }

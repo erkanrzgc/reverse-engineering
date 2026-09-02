@@ -10,7 +10,7 @@
 //! `MachOParser`) end-to-end via the public `BinaryParser` / `BinaryInfo`
 //! contract, complementing the unit tests in `src/binary/*.rs`.
 
-use decompiler::binary::{parse_binary, BinaryFormat};
+use reverse_engineering::binary::{parse_binary, BinaryFormat};
 use std::path::PathBuf;
 
 #[path = "fixtures/binary/macho64_deadbeef.rs"]
@@ -91,8 +91,8 @@ fn detects_macho_format_from_inline_deadbeef_bytes() {
 
 #[test]
 fn macho_parser_accepts_inline_deadbeef_bytes() {
-    use decompiler::binary::parser::BinaryParser;
-    let parser = decompiler::binary::macho::MachOParser;
+    use reverse_engineering::binary::parser::BinaryParser;
+    let parser = reverse_engineering::binary::macho::MachOParser;
     let info = parser
         .parse(&macho_fixture::DEADBEEF_MACH_64[..])
         .expect("MachOParser must accept the DEADBEEF fixture");

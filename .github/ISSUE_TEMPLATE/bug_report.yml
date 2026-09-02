@@ -1,0 +1,13 @@
+name: Bug report
+description: Report a reproducible defect
+body:
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Include command and minimal input details.
+    validations: {required: true}
+  - type: input
+    id: version
+    attributes: {label: Version}
+    validations: {required: true}

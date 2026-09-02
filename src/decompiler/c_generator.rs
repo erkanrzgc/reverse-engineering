@@ -401,7 +401,10 @@ mod tests {
         };
         let out = g.generate_function(&f);
         let first_line = out.lines().next().unwrap();
-        assert_eq!(first_line, "int32_t do_thing(uint64_t size, int32_t return_) {");
+        assert_eq!(
+            first_line,
+            "int32_t do_thing(uint64_t size, int32_t return_) {"
+        );
     }
 
     #[test]
@@ -409,7 +412,10 @@ mod tests {
         let mut g = gen();
         // Dots are illegal in C identifiers; sanitizer collapses them to `_`.
         let out = g.generate_function(&func("kernel32.dll!CreateFileW", vec![]));
-        assert!(out.starts_with("void kernel32_dll_CreateFileW(void) {"), "got: {out}");
+        assert!(
+            out.starts_with("void kernel32_dll_CreateFileW(void) {"),
+            "got: {out}"
+        );
     }
 
     // ---- statements ----
@@ -463,9 +469,18 @@ mod tests {
         }];
         let out = g.generate_function(&func("f", body));
         assert!(out.contains("    if (rax) {\n"), "got: {out}");
-        assert!(out.contains("        return 1;"), "then indented 8 spaces, got: {out}");
-        assert!(out.contains("    } else {"), "else line matches outer indent, got: {out}");
-        assert!(out.contains("        return 0;"), "else body indented 8 spaces, got: {out}");
+        assert!(
+            out.contains("        return 1;"),
+            "then indented 8 spaces, got: {out}"
+        );
+        assert!(
+            out.contains("    } else {"),
+            "else line matches outer indent, got: {out}"
+        );
+        assert!(
+            out.contains("        return 0;"),
+            "else body indented 8 spaces, got: {out}"
+        );
     }
 
     #[test]
@@ -502,10 +517,7 @@ mod tests {
     #[test]
     fn break_continue_render_as_keywords() {
         let mut g = gen();
-        let out = g.generate_function(&func(
-            "f",
-            vec![Statement::Break, Statement::Continue],
-        ));
+        let out = g.generate_function(&func("f", vec![Statement::Break, Statement::Continue]));
         assert!(out.contains("    break;"));
         assert!(out.contains("    continue;"));
     }

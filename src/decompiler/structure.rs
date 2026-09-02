@@ -7,7 +7,9 @@
 
 use crate::analysis::TypeInfo;
 use crate::decompiler::ast::{BinaryOperator, Expression, Function, Statement};
-use crate::disasm::{ControlFlowGraph, EdgeType, Instruction, InstructionIR, MemoryOperand, Operand};
+use crate::disasm::{
+    ControlFlowGraph, EdgeType, Instruction, InstructionIR, MemoryOperand, Operand,
+};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -475,7 +477,7 @@ fn recover_cmp_condition_ir(
     branch: &InstructionIR,
     branch_text: &str,
 ) -> Option<Expression> {
-    let left = setup.operands.get(0)?;
+    let left = setup.operands.first()?;
     let right = setup.operands.get(1)?;
     let op = cmp_operator_for_branch(branch.op.as_str())?;
 
@@ -487,18 +489,10 @@ fn recover_cmp_condition_ir(
     );
 
     let Some(left_expr) = operand_to_expression(left) else {
-        return Some(comment_condition(
-            &expression_text,
-            setup_text,
-            branch_text,
-        ));
+        return Some(comment_condition(&expression_text, setup_text, branch_text));
     };
     let Some(right_expr) = operand_to_expression(right) else {
-        return Some(comment_condition(
-            &expression_text,
-            setup_text,
-            branch_text,
-        ));
+        return Some(comment_condition(&expression_text, setup_text, branch_text));
     };
 
     Some(Expression::BinaryOperation {
@@ -514,7 +508,7 @@ fn recover_test_condition_ir(
     branch: &InstructionIR,
     branch_text: &str,
 ) -> Option<Expression> {
-    let left = setup.operands.get(0)?;
+    let left = setup.operands.first()?;
     let right = setup.operands.get(1)?;
     let compares_equal_zero = branch_is_zero(branch.op.as_str())?;
     let op = if compares_equal_zero {
@@ -526,11 +520,7 @@ fn recover_test_condition_ir(
     if operand_to_text(left).eq_ignore_ascii_case(&operand_to_text(right)) {
         let expression_text = format!("{} {} 0", operand_to_text(left), op.symbol());
         let Some(left_expr) = operand_to_expression(left) else {
-            return Some(comment_condition(
-                &expression_text,
-                setup_text,
-                branch_text,
-            ));
+            return Some(comment_condition(&expression_text, setup_text, branch_text));
         };
         return Some(Expression::BinaryOperation {
             op,
@@ -547,18 +537,10 @@ fn recover_test_condition_ir(
     );
 
     let Some(left_expr) = operand_to_expression(left) else {
-        return Some(comment_condition(
-            &expression_text,
-            setup_text,
-            branch_text,
-        ));
+        return Some(comment_condition(&expression_text, setup_text, branch_text));
     };
     let Some(right_expr) = operand_to_expression(right) else {
-        return Some(comment_condition(
-            &expression_text,
-            setup_text,
-            branch_text,
-        ));
+        return Some(comment_condition(&expression_text, setup_text, branch_text));
     };
 
     Some(Expression::BinaryOperation {
@@ -1219,7 +1201,11 @@ mod ir_condition_recovery_tests {
     fn cmp_operator_for_branch_maps_every_documented_jcc_alias() {
         // Equality
         for m in ["je", "jz"] {
-            assert_eq!(cmp_operator_for_branch(m), Some(BinaryOperator::Equal), "{m}");
+            assert_eq!(
+                cmp_operator_for_branch(m),
+                Some(BinaryOperator::Equal),
+                "{m}"
+            );
         }
         for m in ["jne", "jnz"] {
             assert_eq!(
@@ -1492,9 +1478,7 @@ mod ir_condition_recovery_tests {
     fn recover_cmp_condition_ir_returns_none_when_branch_mnemonic_is_unsupported() {
         let setup = ir(0x1000, "cmp", vec![reg("rax"), reg("rbx")]);
         let branch = ir(0x1003, "jmp", vec![]);
-        assert!(
-            recover_cmp_condition_ir(&setup, "cmp rax, rbx", &branch, "jmp 0x2000").is_none()
-        );
+        assert!(recover_cmp_condition_ir(&setup, "cmp rax, rbx", &branch, "jmp 0x2000").is_none());
     }
 
     // ---- recover_test_condition_ir ----
@@ -1547,9 +1531,7 @@ mod ir_condition_recovery_tests {
         // `test`+`jl` is meaningless — must return None rather than guess.
         let setup = ir(0x1000, "test", vec![reg("rax"), reg("rax")]);
         let branch = ir(0x1003, "jl", vec![]);
-        assert!(
-            recover_test_condition_ir(&setup, "test rax, rax", &branch, "jl 0x2000").is_none()
-        );
+        assert!(recover_test_condition_ir(&setup, "test rax, rax", &branch, "jl 0x2000").is_none());
     }
 
     // ---- comment_condition sanitization ----
@@ -1575,7 +1557,10 @@ mod ir_condition_recovery_tests {
         assert!(text.trim_end().ends_with("*/ 1"), "got: {text}");
         // Each sanitized component should appear as `* /` (with the inserted space).
         assert!(text.contains("a * / b"), "expr was not sanitized: {text}");
-        assert!(text.contains("cmp * / rax"), "setup was not sanitized: {text}");
+        assert!(
+            text.contains("cmp * / rax"),
+            "setup was not sanitized: {text}"
+        );
         assert!(
             text.contains("jne * / 0x2000"),
             "branch was not sanitized: {text}"

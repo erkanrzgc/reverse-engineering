@@ -1,7 +1,7 @@
 //! x86/x64 disassembler
 
-use crate::utils::{Error, Result};
 use crate::disasm::ir::{InstructionIR, MemoryOperand, Operand};
+use crate::utils::{Error, Result};
 use iced_x86::{
     Decoder, DecoderOptions, Formatter, Instruction as IcedInstruction, IntelFormatter,
 };
@@ -165,15 +165,17 @@ fn decode_operand(instr: &IcedInstruction, idx: u32) -> Operand {
     use iced_x86::OpKind;
 
     match instr.op_kind(idx) {
-        OpKind::Register => Operand::Reg(format!("{:?}", instr.op_register(idx)).to_ascii_lowercase()),
+        OpKind::Register => {
+            Operand::Reg(format!("{:?}", instr.op_register(idx)).to_ascii_lowercase())
+        }
         OpKind::Immediate8 => Operand::Imm(instr.immediate8() as i8 as i64),
         OpKind::Immediate16 => Operand::Imm(instr.immediate16() as i16 as i64),
         OpKind::Immediate32 => Operand::Imm(instr.immediate32() as i32 as i64),
         OpKind::Immediate64 => Operand::Imm(instr.immediate64() as i64),
-        OpKind::Immediate8to16 => Operand::Imm(instr.immediate8to16() as i16 as i64),
-        OpKind::Immediate8to32 => Operand::Imm(instr.immediate8to32() as i32 as i64),
-        OpKind::Immediate8to64 => Operand::Imm(instr.immediate8to64() as i64),
-        OpKind::Immediate32to64 => Operand::Imm(instr.immediate32to64() as i64),
+        OpKind::Immediate8to16 => Operand::Imm(instr.immediate8to16() as i64),
+        OpKind::Immediate8to32 => Operand::Imm(instr.immediate8to32() as i64),
+        OpKind::Immediate8to64 => Operand::Imm(instr.immediate8to64()),
+        OpKind::Immediate32to64 => Operand::Imm(instr.immediate32to64()),
         OpKind::Memory => Operand::Mem(MemoryOperand {
             base: {
                 let base = instr.memory_base();
@@ -196,7 +198,11 @@ fn decode_operand(instr: &IcedInstruction, idx: u32) -> Operand {
             size_bytes: {
                 let size = instr.memory_size();
                 let bytes = size.size() as u32;
-                if bytes == 0 { None } else { Some(bytes) }
+                if bytes == 0 {
+                    None
+                } else {
+                    Some(bytes)
+                }
             },
         }),
         _ => Operand::Other(format!("{:?}", instr.op_kind(idx)).to_ascii_lowercase()),

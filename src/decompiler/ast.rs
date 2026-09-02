@@ -223,7 +223,10 @@ mod tests {
     fn from_expression_tags_node_type_and_only_populates_expression_slot() {
         let node = AstNode::from_expression(Expression::IntegerLiteral(7));
         assert_eq!(node.node_type, AstNodeType::Expression);
-        assert!(matches!(node.expression, Some(Expression::IntegerLiteral(7))));
+        assert!(matches!(
+            node.expression,
+            Some(Expression::IntegerLiteral(7))
+        ));
         assert!(node.statement.is_none());
         assert!(node.function.is_none());
     }
@@ -252,7 +255,10 @@ mod tests {
         // dispatch without inspecting the optional payloads.
         assert_eq!(AstNodeType::Function, AstNodeType::Function);
         assert_ne!(AstNodeType::Expression, AstNodeType::Statement);
-        assert_ne!(AstNodeType::VariableDeclaration, AstNodeType::TypeDeclaration);
+        assert_ne!(
+            AstNodeType::VariableDeclaration,
+            AstNodeType::TypeDeclaration
+        );
     }
 
     #[test]

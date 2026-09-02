@@ -110,7 +110,9 @@ fn detect_hex(value: &str) -> Option<RecipeSuggestion> {
 }
 
 fn detect_base64(value: &str) -> Option<RecipeSuggestion> {
-    if value.len() < MIN_ENCODED_LEN || value.len() % 4 != 0 || value.contains(char::is_whitespace)
+    if value.len() < MIN_ENCODED_LEN
+        || !value.len().is_multiple_of(4)
+        || value.contains(char::is_whitespace)
     {
         return None;
     }

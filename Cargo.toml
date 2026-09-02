@@ -1,7 +1,12 @@
 [package]
-name = "decompiler"
-version = "0.1.0"
+name = "reverse-engineering"
+version = "0.2.0"
 edition = "2021"
+rust-version = "1.87"
+description = "A reliable, open-source binary decompiler for reverse-engineering analysis."
+repository = "https://github.com/erkanrzgc/reverse-engineering.git"
+license = "MIT"
+readme = "README.md"
 
 [dependencies]
 # Binary format parsing
@@ -24,6 +29,7 @@ serde_json = "1.0"
 # Error handling
 anyhow = "1.0"
 thiserror = "1.0"
+tempfile = "3.14"
 
 # Logging
 tracing = "0.1"
@@ -32,19 +38,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Pattern matching
 regex = "1.10"
 
-# Web UI (optional, feature-gated)
-axum = { version = "0.7", optional = true }
-tokio = { version = "1.35", features = ["full"], optional = true }
-tower = { version = "0.4", optional = true }
-tower-http = { version = "0.5", features = ["cors"], optional = true }
-
-[features]
-default = []
-web-ui = ["axum", "tokio", "tower", "tower-http"]
-
 [dev-dependencies]
 criterion = "0.5"
 
+[[bench]]
+name = "analysis"
+harness = false
+
 [[bin]]
-name = "decompiler"
+name = "reverse-engineering"
 path = "src/main.rs"
