@@ -142,3 +142,27 @@ fn output_and_package_directories_are_created_and_replaced_atomically() {
     );
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn filesystem_output_failure_never_emits_stdout() {
+    let root = std::env::temp_dir().join(format!(
+        "reverse-engineering-cli-failure-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let report_path = root.join("report-is-a-file");
+    fs::write(&report_path, b"occupied").unwrap();
+    let output = run(&[
+        "analyze",
+        fixture("hello.so").to_str().unwrap(),
+        "--report-dir",
+        report_path.to_str().unwrap(),
+    ]);
+    assert_eq!(output.status.code(), Some(3));
+    assert!(
+        output.stdout.is_empty(),
+        "stdout leaked before filesystem failure"
+    );
+    let _ = fs::remove_dir_all(root);
+}

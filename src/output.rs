@@ -24,6 +24,8 @@ pub fn write_outputs(
             .as_bytes()
             .to_vec()
     };
+    // Complete every filesystem write before touching stdout. This keeps a
+    // failed package write from producing a misleading successful payload.
     if let Some(path) = output {
         if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
             std::fs::create_dir_all(parent).with_context(|| {
@@ -31,17 +33,13 @@ pub fn write_outputs(
             })?;
         }
         atomic_write(path, &payload)?;
-    } else {
-        std::io::stdout().write_all(&payload)?;
-        if !payload.ends_with(b"\n") {
-            println!();
-        }
     }
     if let Some(dir) = report_dir {
         std::fs::create_dir_all(dir)
             .with_context(|| format!("failed to create report directory {}", dir.display()))?;
         if let Some(report) = &result.report {
             atomic_json(&dir.join("analysis_package.json"), report)?;
+            write_report_components(dir, report)?;
         }
         if let Some(c) = &result.generated_c {
             atomic_write(&dir.join("decompiled.c"), c.as_bytes())?;
@@ -59,6 +57,39 @@ pub fn write_outputs(
             }
         }
     }
+    if output.is_none() {
+        std::io::stdout().write_all(&payload)?;
+        if !payload.ends_with(b"\n") {
+            println!();
+        }
+    }
+    Ok(())
+}
+
+fn write_report_components(
+    dir: &Path,
+    report: &crate::analysis::AnalysisReportPackage,
+) -> Result<()> {
+    macro_rules! component {
+        ($name:literal, $value:expr) => {
+            atomic_json(&dir.join($name), $value)?;
+        };
+    }
+    component!("functions.json", &report.functions);
+    component!("jump_tables.json", &report.jump_tables);
+    component!("call_graph.json", &report.call_graph);
+    component!("xrefs.json", &report.xrefs);
+    component!("sections.json", &report.sections);
+    component!("cfg_summary.json", &report.cfg_summary);
+    component!("strings.json", &report.strings);
+    component!("suspicious_strings.json", &report.suspicious_strings);
+    component!("cyberchef_recipes.json", &report.cyberchef_recipes);
+    component!("strings_by_function.json", &report.strings_by_function);
+    component!("api_insights.json", &report.api_insights);
+    component!("behavior_report.json", &report.behavior_report);
+    component!("import_addresses.json", &report.import_addresses);
+    component!("imports.json", &report.imports);
+    component!("exports.json", &report.exports);
     Ok(())
 }
 
