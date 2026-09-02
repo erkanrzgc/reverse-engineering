@@ -2,6 +2,11 @@
 name = "reverse-engineering"
 version = "0.2.0"
 edition = "2021"
+rust-version = "1.87"
+description = "A reliable, open-source binary decompiler for reverse-engineering analysis."
+repository = "https://github.com/erkanrzgc/reverse-engineering.git"
+license = "MIT"
+readme = "README.md"
 
 [dependencies]
 # Binary format parsing

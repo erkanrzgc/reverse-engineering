@@ -16,12 +16,10 @@
 
 use crate::analysis::{FunctionInfo, TypeInfo};
 use crate::binary::parser::ImportAddressInfo;
-use crate::decompiler::ast::{
-    BinaryOperator, Expression, Function, Statement, UnaryOperator,
-};
+use crate::decompiler::ast::{BinaryOperator, Expression, Function, Statement, UnaryOperator};
 use crate::decompiler::c_syntax::{sanitize_c_identifier, unique_c_identifier};
 use crate::disasm::control_flow::Instruction;
-use crate::disasm::ir::{Operand, Operand::*, MemoryOperand};
+use crate::disasm::ir::{MemoryOperand, Operand, Operand::*};
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 
@@ -215,10 +213,12 @@ fn lift_ir_to_statement(instr: &Instruction) -> Statement {
     let (address, ir) = match instr {
         Instruction::X86(x) => (x.address, x.ir.as_ref()),
         // ARM IR is not populated yet — fall back.
-        Instruction::Arm(a) => return Statement::InlineAsm {
-            address: a.address,
-            disasm: a.to_string(),
-        },
+        Instruction::Arm(a) => {
+            return Statement::InlineAsm {
+                address: a.address,
+                disasm: a.to_string(),
+            }
+        }
     };
 
     let Some(ir) = ir else {
@@ -248,8 +248,9 @@ fn lift_ir_to_statement(instr: &Instruction) -> Statement {
 /// can structurally represent.
 fn ir_to_expression(ir: &crate::disasm::ir::InstructionIR) -> Option<Expression> {
     match ir.op.as_str() {
-        "add" | "sub" | "and" | "or" | "xor" | "shl" | "shr"
-        | "lea" | "imul" => binary_arithmetic(ir),
+        "add" | "sub" | "and" | "or" | "xor" | "shl" | "shr" | "lea" | "imul" => {
+            binary_arithmetic(ir)
+        }
         "inc" | "dec" => inc_dec(ir),
         "neg" | "not" => unary_arithmetic(ir),
         "mov" | "movzx" | "movsxd" => simple_mov(ir),
@@ -507,11 +508,7 @@ mod ir_lifting_tests {
 
     #[test]
     fn lift_neg_reg_produces_unary_assignment() {
-        let stmt = lift_ir_to_statement(&ir_instr(
-            0x1020,
-            "neg",
-            vec![Reg("rcx".to_string())],
-        ));
+        let stmt = lift_ir_to_statement(&ir_instr(0x1020, "neg", vec![Reg("rcx".to_string())]));
         assert!(
             matches!(
                 stmt,
@@ -532,11 +529,7 @@ mod ir_lifting_tests {
 
     #[test]
     fn lift_inc_reg_produces_add_one() {
-        let stmt = lift_ir_to_statement(&ir_instr(
-            0x1030,
-            "inc",
-            vec![Reg("rdx".to_string())],
-        ));
+        let stmt = lift_ir_to_statement(&ir_instr(0x1030, "inc", vec![Reg("rdx".to_string())]));
         assert!(
             matches!(
                 stmt,
@@ -646,7 +639,13 @@ mod ir_lifting_tests {
         });
         let stmt = lift_ir_to_statement(&instr);
         assert!(
-            matches!(stmt, Statement::InlineAsm { address: 0x2000, .. }),
+            matches!(
+                stmt,
+                Statement::InlineAsm {
+                    address: 0x2000,
+                    ..
+                }
+            ),
             "expected InlineAsm for no-IR instruction, got {:?}",
             stmt
         );
@@ -656,13 +655,15 @@ mod ir_lifting_tests {
     fn unsupported_mnemonic_falls_back_to_inline_asm() {
         // `push` / `pop` have IR but aren't in the arithmetic map yet —
         // they should stay as InlineAsm.
-        let stmt = lift_ir_to_statement(&ir_instr(
-            0x3000,
-            "push",
-            vec![Reg("rbp".to_string())],
-        ));
+        let stmt = lift_ir_to_statement(&ir_instr(0x3000, "push", vec![Reg("rbp".to_string())]));
         assert!(
-            matches!(stmt, Statement::InlineAsm { address: 0x3000, .. }),
+            matches!(
+                stmt,
+                Statement::InlineAsm {
+                    address: 0x3000,
+                    ..
+                }
+            ),
             "expected InlineAsm for unsupported mnemonic, got {:?}",
             stmt
         );

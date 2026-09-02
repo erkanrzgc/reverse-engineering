@@ -182,7 +182,8 @@ impl ControlFlowGraph {
             });
             self.address_to_node.insert(*address, node);
             for (idx, instr) in instrs.iter().enumerate() {
-                self.address_to_location.insert(instr.address(), (node, idx));
+                self.address_to_location
+                    .insert(instr.address(), (node, idx));
             }
 
             if self.entry.is_none() {

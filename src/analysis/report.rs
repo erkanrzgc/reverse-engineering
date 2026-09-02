@@ -846,10 +846,7 @@ fn call_references(
         .instructions
         .iter()
         .filter_map(|instruction| {
-            let Some(target) = call_target(instruction).or_else(|| import_call_target(instruction))
-            else {
-                return None;
-            };
+            let target = call_target(instruction).or_else(|| import_call_target(instruction))?;
             if let Some(import) = import_addresses.get(&target) {
                 return Some(CallReference {
                     instruction_address: instruction.address(),

@@ -156,4 +156,3 @@ mod tests {
         assert!(matches!(op, Operand::Other(ref s) if s == "xmmword ptr [rsp+10h]"));
     }
 }
-

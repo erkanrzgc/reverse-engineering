@@ -184,10 +184,8 @@ mod tests {
     #[test]
     fn matches_x64_function_prologue_pattern() {
         let matcher = PatternMatcher::new();
-        let matches = matcher.match_patterns(&[
-            x86(0x1000, "push", "rbp"),
-            x86(0x1001, "mov", "rbp, rsp"),
-        ]);
+        let matches =
+            matcher.match_patterns(&[x86(0x1000, "push", "rbp"), x86(0x1001, "mov", "rbp, rsp")]);
         let names = matched_names(&matches);
         assert!(
             names.contains(&"function_prologue_x64"),
