@@ -7,7 +7,7 @@
   "properties": {
     "schema_version": {"const": "1.0"},
     "status": {"type": "string", "enum": ["complete", "partial", "failed"]},
-    "binary": {"type": "object", "required": ["input_path", "format", "architecture", "entry_point", "input_bytes", "code_section_count", "instruction_count", "function_count", "string_count"], "properties": {"input_path": {"type": "string"}, "format": {"type": "string"}, "architecture": {"type": "string"}, "entry_point": {"type": "integer", "minimum": 0}, "input_bytes": {"type": "integer", "minimum": 0}, "code_section_count": {"type": "integer", "minimum": 0}, "instruction_count": {"type": "integer", "minimum": 0}, "function_count": {"type": "integer", "minimum": 0}, "string_count": {"type": "integer", "minimum": 0}}, "additionalProperties": false},
+    "binary": {"type": "object", "required": ["input_path", "format", "architecture", "entry_point", "input_bytes", "code_section_count", "instruction_count", "function_count", "string_count"], "properties": {"input_path": {"type": "string"}, "format": {"type": "string", "enum": ["ELF", "PE/EXE", "Mach-O"]}, "architecture": {"type": "string", "enum": ["x86", "x64", "ARM", "ARM64"]}, "entry_point": {"type": "integer", "minimum": 0}, "input_bytes": {"type": "integer", "minimum": 0}, "code_section_count": {"type": "integer", "minimum": 0}, "instruction_count": {"type": "integer", "minimum": 0}, "function_count": {"type": "integer", "minimum": 0}, "string_count": {"type": "integer", "minimum": 0}}, "additionalProperties": false},
     "generated_c": {"type": ["string", "null"]}, "report": {"type": ["object", "null"]}, "runtime_artifacts": {"type": ["object", "null"]},
     "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
   },

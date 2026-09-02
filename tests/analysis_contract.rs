@@ -31,6 +31,136 @@ fn assert_key_order(json: &str, keys: &[&str]) {
     }
 }
 
+fn assert_sorted_by<F>(array: &Value, label: &str, key: F)
+where
+    F: Fn(&Value) -> String,
+{
+    let Some(items) = array.as_array() else {
+        return;
+    };
+    let keys: Vec<String> = items.iter().map(key).collect();
+    assert!(
+        keys.windows(2).all(|pair| pair[0] <= pair[1]),
+        "{label} is not sorted"
+    );
+}
+
+fn text(item: &Value, field: &str) -> String {
+    item[field].as_str().unwrap_or_default().to_owned()
+}
+
+fn number(item: &Value, field: &str) -> u64 {
+    item[field].as_u64().unwrap_or_default()
+}
+
+fn assert_report_collections(report: &Value) {
+    assert_sorted_by(&report["functions"], "functions", |v| {
+        format!("{:020}:{}", number(v, "address"), text(v, "name"))
+    });
+    assert_sorted_by(&report["jump_tables"], "jump_tables", |v| {
+        format!(
+            "{:020}:{:020}",
+            number(v, "function_address"),
+            number(v, "instruction_address")
+        )
+    });
+    assert_sorted_by(&report["call_graph"], "call_graph", |v| {
+        format!(
+            "{:020}:{:020}",
+            number(v, "caller_address"),
+            number(v, "callee_address")
+        )
+    });
+    assert_sorted_by(&report["sections"], "sections", |v| {
+        format!("{:020}:{}", number(v, "virtual_address"), text(v, "name"))
+    });
+    assert_sorted_by(&report["strings"], "strings", |v| {
+        format!("{:020}:{}", number(v, "address"), text(v, "symbol"))
+    });
+    assert_sorted_by(&report["suspicious_strings"], "suspicious_strings", |v| {
+        format!("{:020}:{}", number(v, "address"), text(v, "symbol"))
+    });
+    assert_sorted_by(&report["cyberchef_recipes"], "cyberchef_recipes", |v| {
+        format!("{}:{}", text(v, "symbol"), text(v, "recipe_name"))
+    });
+    assert_sorted_by(&report["strings_by_function"], "strings_by_function", |v| {
+        format!(
+            "{:020}:{}",
+            number(v, "function_address"),
+            text(v, "function_name")
+        )
+    });
+    assert_sorted_by(&report["api_insights"], "api_insights", |v| {
+        format!("{}:{}", text(v, "library"), text(v, "function"))
+    });
+    assert_sorted_by(&report["import_addresses"], "import_addresses", |v| {
+        format!(
+            "{:020}:{}:{}",
+            number(v, "address"),
+            text(v, "library"),
+            text(v, "function")
+        )
+    });
+    assert_sorted_by(&report["imports"], "imports", |v| text(v, "name"));
+    assert_sorted_by(&report["exports"], "exports", |v| {
+        format!("{:020}:{}", number(v, "address"), text(v, "name"))
+    });
+    assert_sorted_by(&report["xrefs"]["functions"], "xrefs.functions", |v| {
+        format!(
+            "{:020}:{}",
+            number(v, "function_address"),
+            text(v, "function_name")
+        )
+    });
+    assert_sorted_by(&report["xrefs"]["imports"], "xrefs.imports", |v| {
+        format!("{}:{}", text(v, "library"), text(v, "function"))
+    });
+    assert_sorted_by(
+        &report["behavior_report"]["categories"],
+        "behavior categories",
+        |v| text(v, "name"),
+    );
+    assert_sorted_by(
+        &report["behavior_report"]["findings"],
+        "behavior findings",
+        |v| {
+            format!(
+                "{}:{}:{}",
+                text(v, "category"),
+                text(v, "source"),
+                text(v, "detail")
+            )
+        },
+    );
+    if let Some(items) = report["functions"].as_array() {
+        for item in items {
+            assert_sorted_by(&item["calls"], "function calls", |v| {
+                number(v, "instruction_address").to_string()
+            });
+            assert_sorted_by(&item["tail_calls"], "tail calls", |v| {
+                number(v, "instruction_address").to_string()
+            });
+            assert_sorted_by(&item["string_refs"], "function string refs", |v| {
+                number(v, "instruction_address").to_string()
+            });
+        }
+    }
+    if let Some(items) = report["call_graph"].as_array() {
+        for item in items {
+            assert_sorted_by(&item["call_sites"], "call sites", |v| {
+                v.as_u64().unwrap_or_default().to_string()
+            });
+        }
+    }
+    if let Some(items) = report["strings_by_function"].as_array() {
+        for item in items {
+            assert_sorted_by(&item["strings"], "indexed strings", |v| {
+                number(v, "instruction_address").to_string()
+            });
+        }
+    }
+}
+
 #[test]
 fn elf_and_pe_results_obey_v1_contract_and_are_byte_deterministic() {
     for (name, format) in [("hello.so", "ELF"), ("lld_no_tls_64.exe", "PE/EXE")].iter() {
@@ -93,11 +223,25 @@ fn elf_and_pe_results_obey_v1_contract_and_are_byte_deterministic() {
             .as_str()
             .is_some_and(|c| c.contains("#include <stdint.h>")));
         assert!(value["report"].is_object());
+        let report = value["report"].as_object().unwrap();
         assert!(value["runtime_artifacts"].is_object());
+        assert_sorted_by(&report["summary"]["runtime_hints"], "runtime hints", |v| {
+            text(v, "name")
+        });
+        assert_sorted_by(
+            &value["runtime_artifacts"]["artifacts"],
+            "runtime artifacts",
+            |v| format!("{}:{:020}", text(v, "kind"), number(v, "address")),
+        );
+        assert_sorted_by(
+            &value["runtime_artifacts"]["notes"],
+            "runtime artifact notes",
+            |v| v.as_str().unwrap_or_default().to_owned(),
+        );
         assert_eq!(value["diagnostics"].as_array().unwrap().len(), 0);
         assert_eq!(first.generated_c, second.generated_c);
 
-        let report = value["report"].as_object().unwrap();
+        assert_report_collections(&value["report"]);
         let functions = report["functions"].as_array().unwrap();
         let addresses: Vec<u64> = functions
             .iter()
