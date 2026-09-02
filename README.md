@@ -207,15 +207,15 @@ Current suite: **239 unit + 11 integration tests** (250 total).
 | `analysis::runtime_report` | 4 |
 | `analysis::strings` | 7 |
 | `analysis::types` | 16 |
-| `reverse_engineering::decompiler::ast` | 6 |
-| `reverse_engineering::decompiler::c_generator` | 17 |
-| `reverse_engineering::decompiler::c_syntax` | 12 |
-| `reverse_engineering::decompiler::lifter` | 10 |
-| `reverse_engineering::decompiler::optimization` | 15 |
-| `reverse_engineering::decompiler::signatures` | 16 |
-| `reverse_engineering::decompiler::string_refs` | 6 |
-| `reverse_engineering::decompiler::structure` (IR helpers) | 22 |
-| `reverse_engineering::decompiler::structure_tests` (CFG end-to-end) | 18 |
+| `decompiler::ast` | 6 |
+| `decompiler::c_generator` | 17 |
+| `decompiler::c_syntax` | 12 |
+| `decompiler::lifter` | 10 |
+| `decompiler::optimization` | 15 |
+| `decompiler::signatures` | 16 |
+| `decompiler::string_refs` | 6 |
+| `decompiler::structure` (IR helpers) | 22 |
+| `decompiler::structure_tests` (CFG end-to-end) | 18 |
 | `utils::error` | 3 |
 | `tests/binary_fixtures.rs` (ELF · PE · Mach-O) | 7 |
 | `tests/golden_decompile.rs` | 3 |
