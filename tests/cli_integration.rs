@@ -166,3 +166,50 @@ fn filesystem_output_failure_never_emits_stdout() {
     );
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn cli_replaces_existing_output_and_package_files() {
+    let root = std::env::temp_dir().join(format!(
+        "reverse-engineering-cli-replace-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&root);
+    let output_path = root.join("result.bin");
+    let report_dir = root.join("reports");
+    let artifacts_dir = root.join("artifacts");
+    let input = fixture("hello.so");
+    let common = [
+        "analyze",
+        input.to_str().unwrap(),
+        "--output",
+        output_path.to_str().unwrap(),
+        "--report-dir",
+        report_dir.to_str().unwrap(),
+        "--artifacts-dir",
+        artifacts_dir.to_str().unwrap(),
+    ];
+    let first = run(&common);
+    assert!(first.status.success());
+    let first_output = fs::read(&output_path).unwrap();
+    assert!(first_output.starts_with(b"// Decompiled"));
+    let report_file = report_dir.join("analysis_package.json");
+    fs::write(&report_file, b"stale sentinel").unwrap();
+    let mut second_args = common.to_vec();
+    second_args.extend(["--format", "json"]);
+    let second = run(&second_args);
+    assert!(second.status.success());
+    let second_output = fs::read(&output_path).unwrap();
+    assert_ne!(first_output, second_output);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&second_output).unwrap()["schema_version"],
+        "1.0"
+    );
+    let replaced_report = fs::read(&report_file).unwrap();
+    assert!(!replaced_report.starts_with(b"stale sentinel"));
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&replaced_report).unwrap()["summary"]["format"],
+        "ELF"
+    );
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 3);
+    let _ = fs::remove_dir_all(root);
+}

@@ -7,6 +7,8 @@ use std::path::Path;
 use crate::AnalysisResult;
 
 /// Write selected machine output and optional report/artifact packages.
+/// Existing known package files are replaced atomically; caller-owned unknown
+/// files in those directories are intentionally preserved.
 pub fn write_outputs(
     result: &AnalysisResult,
     json: bool,
