@@ -6,17 +6,18 @@ use crate::analysis::{
     RuntimeArtifactExtractor, RuntimeArtifactInputs, RuntimeArtifactResult, RuntimeDetectionInputs,
     RuntimeDetector, RuntimeReportBuilder, RuntimeReportInputs, StringExtractor,
 };
-use crate::binary::{parse_binary, BinaryFormat};
+use crate::binary::{parse_binary_bytes, BinaryFormat};
 use crate::decompiler::{
     annotate_string_references, escape_c_string, import_function_declarations,
-    lift_functions_with_imports, recover_function_signatures, sanitize_c_comment,
-    sanitize_c_identifier, structure_functions_with_cfg, CGenerator, CGeneratorConfig, Function,
+    lift_functions_with_imports, recover_function_signatures, sanitize_c_identifier,
+    sanitize_c_line_comment, structure_functions_with_cfg, CGenerator, CGeneratorConfig, Function,
     OptimizationLevel, Optimizer,
 };
 use crate::disasm::{ArmDisassembler, ControlFlowGraph, Instruction, X86Disassembler};
 use crate::utils::error::Error as PipelineError;
 use serde::Serialize;
 use std::fmt;
+use std::io::Read;
 use std::path::Path;
 
 const SCHEMA_VERSION: &str = "1.0";
@@ -165,6 +166,33 @@ impl OutputSelection {
             runtime_artifacts: false,
         }
     }
+
+    pub const fn with_generated_c(mut self, enabled: bool) -> Self {
+        self.generated_c = enabled;
+        self
+    }
+
+    pub const fn with_report(mut self, enabled: bool) -> Self {
+        self.report = enabled;
+        self
+    }
+
+    pub const fn with_runtime_artifacts(mut self, enabled: bool) -> Self {
+        self.runtime_artifacts = enabled;
+        self
+    }
+
+    pub const fn includes_generated_c(self) -> bool {
+        self.generated_c
+    }
+
+    pub const fn includes_report(self) -> bool {
+        self.report
+    }
+
+    pub const fn includes_runtime_artifacts(self) -> bool {
+        self.runtime_artifacts
+    }
 }
 
 impl Default for OutputSelection {
@@ -257,33 +285,45 @@ impl AnalysisEngine {
         path: &Path,
         config: &AnalysisConfig,
     ) -> Result<AnalysisResult, AnalysisError> {
-        let metadata = std::fs::metadata(path).map_err(|error| {
+        let file = std::fs::File::open(path).map_err(|error| {
             AnalysisError::fatal(
                 DiagnosticStage::Input,
                 DiagnosticCode::InputReadFailed,
-                format!("failed to inspect {}: {error}", path.display()),
+                format!("failed to open {}: {error}", path.display()),
             )
         })?;
-        let input_bytes = metadata.len();
+        let read_limit = config.limits.max_input_bytes.saturating_add(1);
+        let mut bytes = Vec::new();
+        file.take(read_limit)
+            .read_to_end(&mut bytes)
+            .map_err(|error| {
+                AnalysisError::fatal(
+                    DiagnosticStage::Input,
+                    DiagnosticCode::InputReadFailed,
+                    format!("failed to read {}: {error}", path.display()),
+                )
+            })?;
+        let input_bytes = u64::try_from(bytes.len()).map_err(|_| {
+            AnalysisError::fatal(
+                DiagnosticStage::Input,
+                DiagnosticCode::InputLimitExceeded,
+                format!(
+                    "input {} cannot fit within a u64 byte count",
+                    path.display()
+                ),
+            )
+        })?;
         if input_bytes > config.limits.max_input_bytes {
             return Err(AnalysisError::fatal(
                 DiagnosticStage::Input,
                 DiagnosticCode::InputLimitExceeded,
                 format!(
-                    "input {} is {input_bytes} bytes, exceeding the {} byte limit",
+                    "input {} exceeds the {} byte limit",
                     path.display(),
                     config.limits.max_input_bytes
                 ),
             ));
         }
-
-        let bytes = std::fs::read(path).map_err(|error| {
-            AnalysisError::fatal(
-                DiagnosticStage::Input,
-                DiagnosticCode::InputReadFailed,
-                format!("failed to read {}: {error}", path.display()),
-            )
-        })?;
         if bytes.is_empty() {
             return Err(AnalysisError::fatal(
                 DiagnosticStage::Input,
@@ -299,7 +339,7 @@ impl AnalysisEngine {
             ));
         }
 
-        let binary = parse_binary(path).map_err(|error| {
+        let binary = parse_binary_bytes(&bytes).map_err(|error| {
             let code = if matches!(error, PipelineError::UnsupportedFormat(_)) {
                 DiagnosticCode::UnsupportedFormat
             } else {
@@ -391,22 +431,38 @@ impl AnalysisEngine {
             });
         }
 
-        let runtime_matches = RuntimeDetector::new().detect(RuntimeDetectionInputs {
-            sections: &sections,
-            imports: &imports,
-            exports: &exports,
-            strings: &strings,
+        let needs_runtime_analysis =
+            config.outputs.generated_c || config.outputs.report || config.outputs.runtime_artifacts;
+        let runtime_matches = if needs_runtime_analysis {
+            RuntimeDetector::new().detect(RuntimeDetectionInputs {
+                sections: &sections,
+                imports: &imports,
+                exports: &exports,
+                strings: &strings,
+            })
+        } else {
+            Vec::new()
+        };
+        let runtime_reports = config.outputs.generated_c.then(|| {
+            RuntimeReportBuilder::new().build(RuntimeReportInputs {
+                runtime_matches: &runtime_matches,
+                sections: &sections,
+                strings: &strings,
+            })
         });
-        let runtime_reports = RuntimeReportBuilder::new().build(RuntimeReportInputs {
-            runtime_matches: &runtime_matches,
-            sections: &sections,
-            strings: &strings,
-        });
-        let cfg = ControlFlowGraph::from_instructions(&instructions);
+        let cfg = (config.outputs.generated_c || config.outputs.report)
+            .then(|| ControlFlowGraph::from_instructions(&instructions));
         let input_path = path.to_string_lossy().into_owned();
 
-        let report = config.outputs.report.then(|| {
-            AnalysisReportBuilder::new().build(AnalysisReportInputs {
+        let report = if config.outputs.report {
+            let Some(cfg) = cfg.as_ref() else {
+                return Err(AnalysisError::fatal(
+                    DiagnosticStage::Internal,
+                    DiagnosticCode::InternalFailure,
+                    "report selection did not initialize a control-flow graph",
+                ));
+            };
+            Some(AnalysisReportBuilder::new().build(AnalysisReportInputs {
                 input_path: &input_path,
                 format: binary.format().name(),
                 architecture,
@@ -420,8 +476,10 @@ impl AnalysisEngine {
                 import_addresses: &import_addresses,
                 exports: &exports,
                 runtime_matches: &runtime_matches,
-            })
-        });
+            }))
+        } else {
+            None
+        };
 
         let runtime_artifacts = config.outputs.runtime_artifacts.then(|| {
             let mut result = RuntimeArtifactExtractor::new().extract(RuntimeArtifactInputs {
@@ -440,8 +498,16 @@ impl AnalysisEngine {
             result
         });
 
-        let generated_c = config.outputs.generated_c.then(|| {
-            generate_c(GenerationInputs {
+        let generated_c = if config.outputs.generated_c {
+            let (Some(cfg), Some(runtime_reports)) = (cfg.as_ref(), runtime_reports.as_deref())
+            else {
+                return Err(AnalysisError::fatal(
+                    DiagnosticStage::Internal,
+                    DiagnosticCode::InternalFailure,
+                    "generated C selection did not initialize its supporting analyses",
+                ));
+            };
+            Some(generate_c(GenerationInputs {
                 input_path: &input_path,
                 format: binary.format().name(),
                 architecture,
@@ -450,11 +516,13 @@ impl AnalysisEngine {
                 import_addresses: &import_addresses,
                 strings: &strings,
                 runtime_matches: &runtime_matches,
-                runtime_reports: &runtime_reports,
-                cfg: &cfg,
+                runtime_reports,
+                cfg,
                 optimization: config.optimization,
-            })
-        });
+            }))
+        } else {
+            None
+        };
 
         Ok(AnalysisResult {
             schema_version: SCHEMA_VERSION.to_string(),
@@ -524,14 +592,19 @@ fn extract_strings(
         .iter()
         .filter(|section| section.characteristics.is_data)
     {
-        let extracted = extractor.extract(&section.raw_data, section.virtual_address);
         let remaining = limit.saturating_sub(strings.len());
-        if extracted.len() > remaining {
-            strings.extend(extracted.into_iter().take(remaining));
+        if remaining == 0 {
             limit_hit = true;
             break;
         }
+        let extracted =
+            extractor.extract_with_limit(&section.raw_data, section.virtual_address, remaining);
+        let allowance_exhausted = extracted.len() == remaining;
         strings.extend(extracted);
+        if allowance_exhausted {
+            limit_hit = true;
+            break;
+        }
     }
 
     (strings, limit_hit)
@@ -554,9 +627,18 @@ struct GenerationInputs<'a> {
 fn generate_c(inputs: GenerationInputs<'_>) -> String {
     let mut output = String::new();
     output.push_str("// Decompiled by reverse-engineering\n");
-    output.push_str(&format!("// Binary: {}\n", inputs.input_path));
-    output.push_str(&format!("// Format: {}\n", inputs.format));
-    output.push_str(&format!("// Architecture: {}\n", inputs.architecture));
+    output.push_str(&format!(
+        "// Binary: {}\n",
+        sanitize_c_line_comment(inputs.input_path)
+    ));
+    output.push_str(&format!(
+        "// Format: {}\n",
+        sanitize_c_line_comment(inputs.format)
+    ));
+    output.push_str(&format!(
+        "// Architecture: {}\n",
+        sanitize_c_line_comment(inputs.architecture)
+    ));
     output.push_str(&format!("// Entry point: 0x{:X}\n", inputs.entry_point));
     if inputs.runtime_matches.is_empty() {
         output.push_str("// Runtime hints: none detected\n\n");
@@ -565,13 +647,13 @@ fn generate_c(inputs: GenerationInputs<'_>) -> String {
         for runtime in inputs.runtime_matches {
             output.push_str(&format!(
                 "// - {} ({}%): {}\n",
-                sanitize_c_comment(runtime.name),
+                sanitize_c_line_comment(runtime.name),
                 runtime.confidence,
-                sanitize_c_comment(&runtime.evidence.join("; "))
+                sanitize_c_line_comment(&runtime.evidence.join("; "))
             ));
             output.push_str(&format!(
                 "//   Guidance: {}\n",
-                sanitize_c_comment(runtime.guidance)
+                sanitize_c_line_comment(runtime.guidance)
             ));
         }
         if !inputs.runtime_reports.is_empty() {
@@ -579,21 +661,21 @@ fn generate_c(inputs: GenerationInputs<'_>) -> String {
             for report in inputs.runtime_reports {
                 output.push_str(&format!(
                     "// - {}: {}\n",
-                    sanitize_c_comment(&report.title),
-                    sanitize_c_comment(&report.summary)
+                    sanitize_c_line_comment(&report.title),
+                    sanitize_c_line_comment(&report.summary)
                 ));
                 for artifact in &report.artifacts {
                     output.push_str(&format!(
                         "//   Artifact: {} - {}\n",
-                        sanitize_c_comment(&artifact.name),
-                        sanitize_c_comment(&artifact.detail)
+                        sanitize_c_line_comment(&artifact.name),
+                        sanitize_c_line_comment(&artifact.detail)
                     ));
                 }
                 for action in &report.actions {
                     output.push_str(&format!(
                         "//   Action: {} - {}\n",
-                        sanitize_c_comment(&action.label),
-                        sanitize_c_comment(&action.detail)
+                        sanitize_c_line_comment(&action.label),
+                        sanitize_c_line_comment(&action.detail)
                     ));
                 }
             }
@@ -620,8 +702,8 @@ fn generate_c(inputs: GenerationInputs<'_>) -> String {
         for import in import_function_declarations(inputs.import_addresses) {
             output.push_str(&format!(
                 "// import: {}!{} @ 0x{:X}\n",
-                sanitize_c_comment(&import.library),
-                sanitize_c_comment(&import.function),
+                sanitize_c_line_comment(&import.library),
+                sanitize_c_line_comment(&import.function),
                 import.address
             ));
             output.push_str(&format!("void {}(void);\n", import.c_name));
@@ -660,7 +742,9 @@ fn generate_c(inputs: GenerationInputs<'_>) -> String {
     for (info, function) in inputs.functions.iter().zip(ast_functions.iter()) {
         output.push_str(&format!(
             "// Function: {} at 0x{:X} (size: {} bytes)\n",
-            info.name, info.address, info.size
+            sanitize_c_line_comment(&info.name),
+            info.address,
+            info.size
         ));
         output.push_str(&generator.generate_function(function));
         output.push('\n');

@@ -157,6 +157,37 @@ fn output_selection_controls_optional_result_payloads() {
 }
 
 #[test]
+fn output_selection_supports_every_payload_combination() {
+    for generated_c in [false, true] {
+        for report in [false, true] {
+            for runtime_artifacts in [false, true] {
+                let outputs = OutputSelection::none()
+                    .with_generated_c(generated_c)
+                    .with_report(report)
+                    .with_runtime_artifacts(runtime_artifacts);
+
+                assert_eq!(outputs.includes_generated_c(), generated_c);
+                assert_eq!(outputs.includes_report(), report);
+                assert_eq!(outputs.includes_runtime_artifacts(), runtime_artifacts);
+
+                let result = AnalysisEngine::analyze_path(
+                    &fixture("hello.so"),
+                    &AnalysisConfig {
+                        outputs,
+                        ..AnalysisConfig::default()
+                    },
+                )
+                .unwrap();
+
+                assert_eq!(result.generated_c.is_some(), generated_c);
+                assert_eq!(result.report.is_some(), report);
+                assert_eq!(result.runtime_artifacts.is_some(), runtime_artifacts);
+            }
+        }
+    }
+}
+
+#[test]
 fn repeated_analysis_serializes_identically() {
     let config = AnalysisConfig {
         outputs: OutputSelection::all(),
@@ -169,6 +200,25 @@ fn repeated_analysis_serializes_identically() {
     assert_eq!(
         serde_json::to_string_pretty(&first).unwrap(),
         serde_json::to_string_pretty(&second).unwrap()
+    );
+}
+
+#[test]
+fn unlimited_input_limit_does_not_overflow() {
+    let config = AnalysisConfig {
+        outputs: OutputSelection::none(),
+        limits: ResourceLimits {
+            max_input_bytes: u64::MAX,
+            ..ResourceLimits::default()
+        },
+        ..AnalysisConfig::default()
+    };
+
+    let result = AnalysisEngine::analyze_path(&fixture("hello.so"), &config).unwrap();
+
+    assert_eq!(
+        result.binary.input_bytes,
+        fs::metadata(fixture("hello.so")).unwrap().len()
     );
 }
 

@@ -5,4 +5,6 @@ pub mod macho;
 pub mod parser;
 pub mod pe;
 
-pub use parser::{parse_binary, BinaryFormat, BinaryParser, PeDataDirectoryInfo};
+pub use parser::{
+    parse_binary, parse_binary_bytes, BinaryFormat, BinaryParser, PeDataDirectoryInfo,
+};

@@ -1,13 +1,16 @@
-//! Durable output helpers.
+//! Atomic output helpers.
 
 use anyhow::{Context, Result};
 use std::io::Write;
 use std::path::Path;
 
-/// Atomically creates or replaces `path` with `contents`.
+/// Atomically makes `contents` visible at `path`, replacing an existing file.
 ///
 /// The temporary file is created beside the destination so the final persist
-/// stays on one filesystem. Dropping it after any failed step removes it.
+/// stays on one filesystem. Its contents are synced before replacement, and
+/// dropping it after any failed step removes it. This does not sync the parent
+/// directory, so it prevents readers from observing partial contents but does
+/// not promise that the directory entry survives sudden power loss.
 pub fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
     let parent = path
         .parent()

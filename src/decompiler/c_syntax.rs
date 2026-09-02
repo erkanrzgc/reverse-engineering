@@ -45,6 +45,35 @@ pub fn sanitize_c_comment(value: &str) -> String {
     value.replace("*/", "* /")
 }
 
+/// Sanitize untrusted text before interpolating it into a C `//` comment.
+///
+/// Line-breaking and other control characters are rendered visibly, while C
+/// comment delimiter pairs are separated so the result remains inert if it is
+/// later moved into a different comment context.
+pub fn sanitize_c_line_comment(value: &str) -> String {
+    let mut sanitized = String::with_capacity(value.len());
+
+    for character in value.chars() {
+        match character {
+            '\r' => sanitized.push_str("\\r"),
+            '\n' => sanitized.push_str("\\n"),
+            '\t' => sanitized.push_str("\\t"),
+            '\\' => sanitized.push_str("\\x5C"),
+            control if control.is_control() => {
+                write!(&mut sanitized, "\\u{{{:X}}}", control as u32)
+                    .expect("writing to a String should never fail");
+            }
+            printable => sanitized.push(printable),
+        }
+    }
+
+    sanitized
+        .replace("/*", "/ *")
+        .replace("*/", "* /")
+        .replace("//", "/ /")
+        .replace("??/", "? ?/")
+}
+
 /// Convert arbitrary text into a valid, non-reserved C identifier.
 ///
 /// Invalid characters are collapsed to `_`, leading digits are prefixed with
@@ -247,6 +276,26 @@ mod tests {
     #[test]
     fn sanitizes_c_block_comment_terminators() {
         assert_eq!(sanitize_c_comment("a */ b"), "a * / b");
+    }
+
+    #[test]
+    fn sanitizes_line_comment_controls_and_delimiters() {
+        let sanitized = sanitize_c_line_comment("safe\r\n\t\u{1} /* block */ // tail");
+
+        assert_eq!(sanitized, "safe\\r\\n\\t\\u{1} / * block * / / / tail");
+        assert!(!sanitized.chars().any(char::is_control));
+        assert!(!sanitized.contains("/*"));
+        assert!(!sanitized.contains("*/"));
+        assert!(!sanitized.contains("//"));
+    }
+
+    #[test]
+    fn sanitizes_line_splicing_tokens() {
+        let trailing_backslash = sanitize_c_line_comment("path\\");
+        let trigraph = sanitize_c_line_comment("trigraph??/");
+
+        assert!(!trailing_backslash.ends_with('\\'));
+        assert!(!trigraph.contains("??/"));
     }
 
     #[test]

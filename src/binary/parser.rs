@@ -162,15 +162,20 @@ pub struct ExportInfo {
 pub fn parse_binary(path: &Path) -> Result<Box<dyn BinaryInfo>> {
     let data = std::fs::read(path)?;
 
-    let format = BinaryFormat::from_magic(&data)
+    parse_binary_bytes(&data)
+}
+
+/// Parse a binary directly from an existing byte buffer.
+pub fn parse_binary_bytes(data: &[u8]) -> Result<Box<dyn BinaryInfo>> {
+    let format = BinaryFormat::from_magic(data)
         .ok_or_else(|| Error::UnsupportedFormat("Unknown binary format".to_string()))?;
 
     tracing::info!("Detected format: {}", format.name());
 
     match format {
-        BinaryFormat::Pe => super::pe::PeParser.parse(&data),
-        BinaryFormat::Elf => super::elf::ElfParser.parse(&data),
-        BinaryFormat::MachO => super::macho::MachOParser.parse(&data),
+        BinaryFormat::Pe => super::pe::PeParser.parse(data),
+        BinaryFormat::Elf => super::elf::ElfParser.parse(data),
+        BinaryFormat::MachO => super::macho::MachOParser.parse(data),
     }
 }
 
@@ -225,5 +230,15 @@ mod tests {
         assert_eq!(BinaryFormat::Pe.name(), "PE/EXE");
         assert_eq!(BinaryFormat::Elf.name(), "ELF");
         assert_eq!(BinaryFormat::MachO.name(), "Mach-O");
+    }
+
+    #[test]
+    fn parses_binary_directly_from_one_byte_buffer() {
+        let bytes = include_bytes!("../../tests/fixtures/binary/hello.so");
+
+        let binary = parse_binary_bytes(bytes).expect("parse ELF bytes");
+
+        assert_eq!(binary.format(), BinaryFormat::Elf);
+        assert!(matches!(binary.architecture(), "x86" | "x64"));
     }
 }
