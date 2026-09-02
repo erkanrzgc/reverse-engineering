@@ -26,6 +26,13 @@ fn help_exposes_analyze_without_legacy_input() {
 }
 
 #[test]
+fn version_is_available_at_root() {
+    let output = run(&["--version"]);
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("reverse-engineering 0.2.0"));
+}
+
+#[test]
 fn json_success_is_stdout_only() {
     let output = run(&[
         "analyze",

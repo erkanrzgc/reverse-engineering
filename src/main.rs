@@ -7,6 +7,7 @@ use std::process::ExitCode;
 #[derive(Parser)]
 #[command(
     name = "reverse-engineering",
+    version,
     about = "Binary to source code decompiler"
 )]
 struct Cli {
