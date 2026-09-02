@@ -69,6 +69,12 @@ fn required_number(item: &Value, field: &str) -> u64 {
         .unwrap_or_else(|| panic!("missing or non-numeric field {field}"))
 }
 
+fn required_array<'a>(value: &'a Value, label: &str) -> &'a [Value] {
+    value
+        .as_array()
+        .unwrap_or_else(|| panic!("{label} is missing or not an array"))
+}
+
 fn text(item: &Value, field: &str) -> String {
     item[field].as_str().unwrap_or_default().to_owned()
 }
@@ -156,30 +162,24 @@ fn assert_report_collections(report: &Value) {
             )
         },
     );
-    if let Some(items) = report["functions"].as_array() {
-        for item in items {
-            assert_sorted_by(&item["calls"], "function calls", |v| {
-                format!("{:020}", required_number(v, "instruction_address"))
-            });
-            assert_sorted_by(&item["tail_calls"], "tail calls", |v| {
-                format!("{:020}", required_number(v, "instruction_address"))
-            });
-            assert_sorted_by(&item["string_refs"], "function string refs", |v| {
-                format!("{:020}", required_number(v, "instruction_address"))
-            });
-        }
+    for item in required_array(&report["functions"], "functions") {
+        assert_sorted_by(&item["calls"], "function calls", |v| {
+            format!("{:020}", required_number(v, "instruction_address"))
+        });
+        assert_sorted_by(&item["tail_calls"], "tail calls", |v| {
+            format!("{:020}", required_number(v, "instruction_address"))
+        });
+        assert_sorted_by(&item["string_refs"], "function string refs", |v| {
+            format!("{:020}", required_number(v, "instruction_address"))
+        });
     }
-    if let Some(items) = report["call_graph"].as_array() {
-        for item in items {
-            assert_sorted_numbers(&item["call_sites"], "call sites");
-        }
+    for item in required_array(&report["call_graph"], "call_graph") {
+        assert_sorted_numbers(&item["call_sites"], "call sites");
     }
-    if let Some(items) = report["strings_by_function"].as_array() {
-        for item in items {
-            assert_sorted_by(&item["strings"], "indexed strings", |v| {
-                format!("{:020}", required_number(v, "instruction_address"))
-            });
-        }
+    for item in required_array(&report["strings_by_function"], "strings_by_function") {
+        assert_sorted_by(&item["strings"], "indexed strings", |v| {
+            format!("{:020}", required_number(v, "instruction_address"))
+        });
     }
 }
 
