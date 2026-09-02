@@ -65,7 +65,32 @@ jobs:
           cp "target/$target/release/${{ matrix.executable }}" "$package_dir/"
           cp README.md LICENSE CHANGELOG.md "$package_dir/"
           tar -C "$RUNNER_TEMP" -czf "$output_dir/$archive" "$(basename "$package_dir")"
-          (cd "$output_dir" && sha256sum "$archive" > "$archive.sha256")
+
+      - name: Generate SHA-256 checksum (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          archive_dir="$RUNNER_TEMP/release"
+          archive="$(basename "$archive_dir"/*.tar.gz)"
+          (cd "$archive_dir" && sha256sum "$archive" > "$archive.sha256")
+
+      - name: Generate SHA-256 checksum (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          archive_dir="$RUNNER_TEMP/release"
+          archive="$(basename "$archive_dir"/*.tar.gz)"
+          (cd "$archive_dir" && shasum -a 256 "$archive" > "$archive.sha256")
+
+      - name: Generate SHA-256 checksum (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $releaseDir = Join-Path '${{ runner.temp }}' 'release'
+          $archive = Get-ChildItem -LiteralPath $releaseDir -Filter '*.tar.gz' | Select-Object -First 1
+          if ($null -eq $archive) { throw "No release archive found in $releaseDir" }
+          $hash = (Get-FileHash -LiteralPath $archive.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($archive.Name)" | Set-Content -LiteralPath (Join-Path $releaseDir "$($archive.Name).sha256") -Encoding ascii
 
       - name: Upload target package
         uses: actions/upload-artifact@v4.4.3
