@@ -22,9 +22,11 @@ target directories, or secrets.
 Releases are created only after a maintainer pushes a `v*` tag (for example,
 `v0.2.0`); ordinary pushes do not publish artifacts. GitHub Actions builds the
 locked release binary for x86-64 Windows (MSVC), x86-64 Linux (GNU), x86-64
-macOS, and Apple Silicon macOS. Each deterministic
-`reverse-engineering-v<version>-<target>.tar.gz` archive contains the
-executable, `README.md`, `LICENSE`, and `CHANGELOG.md`, along with a matching
-`.sha256` checksum file. The workflow runs `--version` and `--help` smoke
-checks before packaging and requires maintainer approval of the tag/release
-operation.
+macOS, and Apple Silicon macOS. Tags must use strict `vMAJOR.MINOR.PATCH`
+syntax. Each archive has deterministic
+`reverse-engineering-v<version>-<target>.tar.gz` naming and a matching `.sha256`
+checksum file; archive byte reproducibility is not promised because tar
+metadata can vary between runners. Archives contain the executable,
+`README.md`, `LICENSE`, and `CHANGELOG.md`. The workflow runs `--version` and
+`--help` smoke checks before packaging and requires maintainer approval of the
+tag/release operation.
