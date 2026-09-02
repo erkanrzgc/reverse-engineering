@@ -5,12 +5,15 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/rust-1.75+-blue?style=flat-square&logo=rust" alt="rust">
+  <img src="https://img.shields.io/badge/rust-1.87+-blue?style=flat-square&logo=rust" alt="rust">
   <img src="https://img.shields.io/badge/crates-12+-purple?style=flat-square" alt="crates">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
   <img src="https://img.shields.io/badge/tests-250%20passing-orange?style=flat-square" alt="tests">
   <img src="https://img.shields.io/github/last-commit/erkanrzgc/reverse-engineering?style=flat-square" alt="last commit">
 </p>
+
+The minimum supported Rust version (MSRV) is **1.87**. This matches the
+compiler version required by the standard-library APIs used by the project.
 
 <p align="center">
   <b>reverse-engineering</b> is a Rust-powered binary decompiler for ELF, PE, and Mach-O executables —
