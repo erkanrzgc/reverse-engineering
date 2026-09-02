@@ -1,0 +1,144 @@
+use serde_json::Value;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+fn fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/binary")
+        .join(name)
+}
+
+fn run(args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_reverse-engineering"))
+        .args(args)
+        .output()
+        .expect("run reverse-engineering")
+}
+
+#[test]
+fn help_exposes_analyze_without_legacy_input() {
+    let output = run(&["--help"]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    assert!(stdout.contains("analyze"));
+    assert!(!stdout.contains("--input"));
+}
+
+#[test]
+fn json_success_is_stdout_only() {
+    let output = run(&[
+        "analyze",
+        fixture("hello.so").to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).expect("JSON stdout");
+    assert_eq!(value["schema_version"], "1.0");
+    assert_eq!(value["status"], "complete");
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("schema_version"));
+}
+
+#[test]
+fn c_success_is_stdout_only() {
+    let output = run(&[
+        "analyze",
+        fixture("hello.so").to_str().unwrap(),
+        "--format",
+        "c",
+    ]);
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("#include"));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("#include"));
+}
+
+#[test]
+fn fatal_input_has_exit_code_three_and_structured_stderr() {
+    let path =
+        std::env::temp_dir().join(format!("reverse-engineering-empty-{}", std::process::id()));
+    fs::write(&path, []).unwrap();
+    let output = run(&["analyze", path.to_str().unwrap(), "--format", "json"]);
+    let _ = fs::remove_file(path);
+    assert_eq!(output.status.code(), Some(3));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("empty_input"));
+}
+
+#[test]
+fn string_limit_is_partial_json_with_exit_code_four() {
+    let output = run(&[
+        "analyze",
+        fixture("hello.so").to_str().unwrap(),
+        "--format",
+        "json",
+        "--max-extracted-strings",
+        "0",
+    ]);
+    assert_eq!(
+        output.status.code(),
+        Some(4),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["status"], "partial");
+    assert_eq!(value["diagnostics"][0]["code"], "string_limit_exceeded");
+}
+
+#[test]
+fn conflicting_or_invalid_options_are_usage_errors() {
+    let output = run(&[
+        "analyze",
+        fixture("hello.so").to_str().unwrap(),
+        "--quiet",
+        "--verbose",
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+    let output = run(&[
+        "analyze",
+        fixture("hello.so").to_str().unwrap(),
+        "--format",
+        "wat",
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+}
+
+#[test]
+fn output_and_package_directories_are_created_and_replaced_atomically() {
+    let root = std::env::temp_dir().join(format!("reverse-engineering-cli-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let output_path = root.join("nested/result.c");
+    let report_dir = root.join("reports");
+    let artifacts_dir = root.join("artifacts");
+    let output = run(&[
+        "analyze",
+        fixture("hello.so").to_str().unwrap(),
+        "--output",
+        output_path.to_str().unwrap(),
+        "--report-dir",
+        report_dir.to_str().unwrap(),
+        "--artifacts-dir",
+        artifacts_dir.to_str().unwrap(),
+    ]);
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output_path.is_file());
+    assert!(report_dir.join("analysis_package.json").is_file());
+    assert!(report_dir.join("decompiled.c").is_file());
+    assert!(artifacts_dir.join("artifacts_manifest.json").is_file());
+    assert_eq!(
+        fs::read_dir(output_path.parent().unwrap()).unwrap().count(),
+        1
+    );
+    let _ = fs::remove_dir_all(root);
+}
