@@ -35,14 +35,38 @@ fn assert_sorted_by<F>(array: &Value, label: &str, key: F)
 where
     F: Fn(&Value) -> String,
 {
-    let Some(items) = array.as_array() else {
-        return;
-    };
+    let items = array
+        .as_array()
+        .unwrap_or_else(|| panic!("{label} is missing or not an array"));
     let keys: Vec<String> = items.iter().map(key).collect();
     assert!(
         keys.windows(2).all(|pair| pair[0] <= pair[1]),
         "{label} is not sorted"
     );
+}
+
+fn assert_sorted_numbers(array: &Value, label: &str) {
+    let items = array
+        .as_array()
+        .unwrap_or_else(|| panic!("{label} is missing or not an array"));
+    let values: Vec<u64> = items
+        .iter()
+        .map(|value| {
+            value
+                .as_u64()
+                .unwrap_or_else(|| panic!("{label} contains a non-numeric value"))
+        })
+        .collect();
+    assert!(
+        values.windows(2).all(|pair| pair[0] <= pair[1]),
+        "{label} is not sorted"
+    );
+}
+
+fn required_number(item: &Value, field: &str) -> u64 {
+    item[field]
+        .as_u64()
+        .unwrap_or_else(|| panic!("missing or non-numeric field {field}"))
 }
 
 fn text(item: &Value, field: &str) -> String {
@@ -135,27 +159,25 @@ fn assert_report_collections(report: &Value) {
     if let Some(items) = report["functions"].as_array() {
         for item in items {
             assert_sorted_by(&item["calls"], "function calls", |v| {
-                number(v, "instruction_address").to_string()
+                format!("{:020}", required_number(v, "instruction_address"))
             });
             assert_sorted_by(&item["tail_calls"], "tail calls", |v| {
-                number(v, "instruction_address").to_string()
+                format!("{:020}", required_number(v, "instruction_address"))
             });
             assert_sorted_by(&item["string_refs"], "function string refs", |v| {
-                number(v, "instruction_address").to_string()
+                format!("{:020}", required_number(v, "instruction_address"))
             });
         }
     }
     if let Some(items) = report["call_graph"].as_array() {
         for item in items {
-            assert_sorted_by(&item["call_sites"], "call sites", |v| {
-                v.as_u64().unwrap_or_default().to_string()
-            });
+            assert_sorted_numbers(&item["call_sites"], "call sites");
         }
     }
     if let Some(items) = report["strings_by_function"].as_array() {
         for item in items {
             assert_sorted_by(&item["strings"], "indexed strings", |v| {
-                number(v, "instruction_address").to_string()
+                format!("{:020}", required_number(v, "instruction_address"))
             });
         }
     }
