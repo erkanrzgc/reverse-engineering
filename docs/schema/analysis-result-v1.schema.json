@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/erkanrzgc/reverse-engineering/schema/analysis-result-v1.json",
+  "title": "Reverse-engineering analysis result v1",
+  "type": "object",
+  "required": ["schema_version", "status", "binary", "diagnostics"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "status": {"type": "string", "enum": ["complete", "partial", "failed"]},
+    "binary": {"type": "object", "required": ["input_path", "format", "architecture", "entry_point", "input_bytes", "code_section_count", "instruction_count", "function_count", "string_count"], "properties": {"input_path": {"type": "string"}, "format": {"type": "string"}, "architecture": {"type": "string"}, "entry_point": {"type": "integer", "minimum": 0}, "input_bytes": {"type": "integer", "minimum": 0}, "code_section_count": {"type": "integer", "minimum": 0}, "instruction_count": {"type": "integer", "minimum": 0}, "function_count": {"type": "integer", "minimum": 0}, "string_count": {"type": "integer", "minimum": 0}}, "additionalProperties": true},
+    "generated_c": {"type": ["string", "null"]}, "report": {"type": ["object", "null"]}, "runtime_artifacts": {"type": ["object", "null"]},
+    "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+  },
+  "$defs": {"diagnostic": {"type": "object", "required": ["stage", "severity", "code", "message"], "properties": {"stage": {"type": "string", "enum": ["input", "parse", "disassembly", "strings", "runtime_artifacts", "decompilation", "internal"]}, "severity": {"type": "string", "enum": ["warning", "error"]}, "code": {"type": "string"}, "message": {"type": "string"}}, "additionalProperties": false}},
+  "additionalProperties": false
+}
