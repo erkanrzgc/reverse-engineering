@@ -211,7 +211,7 @@ Current suite: **239 unit + 11 integration tests** (250 total).
 | `decompiler::c_generator` | 17 |
 | `decompiler::c_syntax` | 12 |
 | `decompiler::lifter` | 10 |
-| `decompiler::optimization` | 15 |
+| `decompiler::optimization` | 19 |
 | `decompiler::signatures` | 16 |
 | `decompiler::string_refs` | 6 |
 | `decompiler::structure` (IR helpers) | 22 |
