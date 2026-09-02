@@ -1,7 +1,7 @@
 //! Runtime-specific analysis reports.
 //!
 //! Runtime detection answers "what kind of program is this?". This pass answers
-//! "what should cyberm4fia-re do next for that runtime?" without pretending it
+//! "what should the analyst do next for that runtime?" without pretending it
 //! can recover unavailable original source code.
 
 use crate::analysis::runtime::{RuntimeFamily, RuntimeMatch};
@@ -185,7 +185,7 @@ fn dotnet_report(runtime: &RuntimeMatch) -> RuntimeReport {
         actions: vec![
             action(
                 "Prefer IL decompilation",
-                "Extract CLR metadata/IL and inspect it with dnSpy, ILSpy, or a future cyberm4fia-re CLR backend.",
+                "Extract CLR metadata/IL and inspect it with dnSpy, ILSpy, or a future reverse-engineering CLR backend.",
             ),
             action(
                 "Use native fallback only for mixed-mode code",

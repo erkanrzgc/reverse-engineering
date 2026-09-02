@@ -1,33 +1,19 @@
-<h1 align="center">cyberm4fia-re</h1>
+<h1 align="center">reverse-engineering</h1>
 
 <p align="center">
   <img src="https://img.shields.io/badge/mission-reverse%20engineering%20via%20rust-red?style=for-the-badge" alt="mission">
 </p>
 
-<table align="center"><tr><td valign="middle">
-<pre>
- ██████╗██╗   ██╗██████╗ ███████╗██████╗ ███╗   ███╗██╗  ██╗███████╗██╗ █████╗
-██╔════╝╚██╗ ██╔╝██╔══██╗██╔════╝██╔══██╗████╗ ████║██║  ██║██╔════╝██║██╔══██╗
-██║      ╚████╔╝ ██████╔╝█████╗  ██████╔╝██╔████╔██║███████║█████╗  ██║███████║
-██║       ╚██╔╝  ██╔══██╗██╔══╝  ██╔══██╗██║╚██╔╝██║╚════██║██╔══╝  ██║██╔══██║
-╚██████╗   ██║   ██████╔╝███████╗██║  ██║██║ ╚═╝ ██║     ██║██║     ██║██║  ██║
- ╚═════╝   ╚═╝   ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝     ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝
-
-</pre>
-</td><td valign="middle">
-<img src="assets/reverse-engineering.png" width="150" alt="reverse engineering">
-</td></tr></table>
-
 <p align="center">
   <img src="https://img.shields.io/badge/rust-1.75+-blue?style=flat-square&logo=rust" alt="rust">
   <img src="https://img.shields.io/badge/crates-12+-purple?style=flat-square" alt="crates">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
-  <img src="https://img.shields.io/badge/tests-127%20passing-orange?style=flat-square" alt="tests">
-  <img src="https://img.shields.io/github/last-commit/erkanrzgc/cyberm4fia-re?style=flat-square" alt="last commit">
+  <img src="https://img.shields.io/badge/tests-250%20passing-orange?style=flat-square" alt="tests">
+  <img src="https://img.shields.io/github/last-commit/erkanrzgc/reverse-engineering?style=flat-square" alt="last commit">
 </p>
 
 <p align="center">
-  <b>cyberm4fia-re</b> is a Rust-powered binary decompiler for ELF, PE, and Mach-O executables —
+  <b>reverse-engineering</b> is a Rust-powered binary decompiler for ELF, PE, and Mach-O executables —
   disassembles x86 & ARM, detects runtime/language families, emits runtime-specific analysis reports,
   extracts runtime artifacts, writes complete reverse-engineering report packages,
   suggests CyberChef decode recipes with one-click deep links for encoded strings,
@@ -115,32 +101,32 @@ parse_binary  ──►  RuntimeDetector  ──►  Runtime hints
 ## Quick Start
 
 ```bash
-git clone https://github.com/erkanrzgc/cyberm4fia-re.git
-cd cyberm4fia-re
+git clone https://github.com/erkanrzgc/reverse-engineering.git
+cd reverse-engineering
 cargo build --release
 ```
 
 ```bash
 # Decompile a binary
-cargo run --release -- -i <binary> -o output.c
+cargo run --release --bin reverse-engineering -- -i <binary> -o output.c
 
 # With optimization
-cargo run --release -- -i <binary> -o output.c --optimization basic
+cargo run --release --bin reverse-engineering -- -i <binary> -o output.c --optimization basic
 
 # Aggressive optimization
-cargo run --release -- -i <binary> -o output.c --optimization aggressive
+cargo run --release --bin reverse-engineering -- -i <binary> -o output.c --optimization aggressive
 
 # Extract runtime-specific artifacts
-cargo run --release -- -i <binary> --extract-runtime-artifacts --artifacts-dir artifacts
+cargo run --release --bin reverse-engineering -- -i <binary> --extract-runtime-artifacts --artifacts-dir artifacts
 
 # Produce a complete reverse-engineering report package
-cargo run --release -- -i <binary> --report-dir out
+cargo run --release --bin reverse-engineering -- -i <binary> --report-dir out
 
 # Print machine-readable analysis JSON
-cargo run --release -- -i <binary> --json --quiet
+cargo run --release --bin reverse-engineering -- -i <binary> --json --quiet
 
 # Build reports without generated C
-cargo run --release -- -i <binary> --report-dir out --only-report --quiet
+cargo run --release --bin reverse-engineering -- -i <binary> --report-dir out --only-report --quiet
 ```
 
 Runtime artifact extraction writes `runtime_report.txt`, `artifacts_manifest.json`,
@@ -168,7 +154,7 @@ indicators, not a malware verdict.
 
 **Windows smoke test:**
 ```bash
-cargo run --release -- -i C:\Windows\System32\notepad.exe -o notepad.c
+cargo run --release --bin reverse-engineering -- -i C:\Windows\System32\notepad.exe -o notepad.c
 # → 672 functions · 48,053 instructions · 52,000+ lines of C
 ```
 
@@ -202,7 +188,7 @@ cargo test --lib            # unit tests only
 cargo test --test binary_fixtures   # integration: format parsers
 ```
 
-Current suite: **235 unit + 10 integration tests** (245 total).
+Current suite: **239 unit + 11 integration tests** (250 total).
 
 | Module | Tests |
 |---|---|
@@ -221,18 +207,19 @@ Current suite: **235 unit + 10 integration tests** (245 total).
 | `analysis::runtime_report` | 4 |
 | `analysis::strings` | 7 |
 | `analysis::types` | 16 |
-| `decompiler::ast` | 6 |
-| `decompiler::c_generator` | 17 |
-| `decompiler::c_syntax` | 12 |
-| `decompiler::lifter` | 10 |
-| `decompiler::optimization` | 15 |
-| `decompiler::signatures` | 16 |
-| `decompiler::string_refs` | 6 |
-| `decompiler::structure` (IR helpers) | 22 |
-| `decompiler::structure_tests` (CFG end-to-end) | 18 |
+| `reverse_engineering::decompiler::ast` | 6 |
+| `reverse_engineering::decompiler::c_generator` | 17 |
+| `reverse_engineering::decompiler::c_syntax` | 12 |
+| `reverse_engineering::decompiler::lifter` | 10 |
+| `reverse_engineering::decompiler::optimization` | 15 |
+| `reverse_engineering::decompiler::signatures` | 16 |
+| `reverse_engineering::decompiler::string_refs` | 6 |
+| `reverse_engineering::decompiler::structure` (IR helpers) | 22 |
+| `reverse_engineering::decompiler::structure_tests` (CFG end-to-end) | 18 |
 | `utils::error` | 3 |
 | `tests/binary_fixtures.rs` (ELF · PE · Mach-O) | 7 |
 | `tests/golden_decompile.rs` | 3 |
+| `tests/package_identity.rs` | 1 |
 
 **Integration fixtures** under `tests/fixtures/binary/` are vendored from the
 [`goblin`](https://github.com/m4b/goblin) crate (MIT, m4b) — see

@@ -1,29 +1,31 @@
-//! Decompiler CLI
+//! Reverse Engineering CLI
 
 use anyhow::Context;
 use clap::Parser;
-use decompiler::analysis::functions::FunctionDetectionInputs;
-use decompiler::analysis::runtime_artifacts::RuntimeArtifactStatus;
-use decompiler::analysis::{
+use reverse_engineering::analysis::functions::FunctionDetectionInputs;
+use reverse_engineering::analysis::runtime_artifacts::RuntimeArtifactStatus;
+use reverse_engineering::analysis::{
     AnalysisReportBuilder, AnalysisReportInputs, AnalysisReportPackage, FunctionDetector,
     RuntimeArtifactExtractor, RuntimeArtifactInputs, RuntimeArtifactResult, RuntimeDetectionInputs,
     RuntimeDetector, RuntimeMatch, RuntimeReport, RuntimeReportBuilder, RuntimeReportInputs,
     StringExtractor,
 };
-use decompiler::binary::{parse_binary, PeDataDirectoryInfo};
-use decompiler::decompiler::{
+use reverse_engineering::binary::{parse_binary, PeDataDirectoryInfo};
+use reverse_engineering::decompiler::{
     annotate_string_references, escape_c_string, import_function_declarations,
     lift_functions_with_imports, recover_function_signatures, sanitize_c_comment,
     sanitize_c_identifier, structure_functions_with_cfg, CGenerator, CGeneratorConfig, Function,
     OptimizationLevel, Optimizer,
 };
-use decompiler::disasm::{ArmDisassembler, ControlFlowGraph, Instruction, X86Disassembler};
+use reverse_engineering::disasm::{
+    ArmDisassembler, ControlFlowGraph, Instruction, X86Disassembler,
+};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use tracing::{error, info};
 
 #[derive(Parser)]
-#[command(name = "decompiler")]
+#[command(name = "reverse-engineering")]
 #[command(about = "Binary to source code decompiler", long_about = None)]
 struct Cli {
     /// Input binary file
@@ -86,10 +88,10 @@ fn main() -> anyhow::Result<()> {
         "info"
     };
     tracing_subscriber::fmt()
-        .with_env_filter(format!("decompiler={}", log_level))
+        .with_env_filter(format!("reverse_engineering={}", log_level))
         .init();
 
-    info!("Starting decompiler...");
+    info!("Starting reverse-engineering...");
     let report_dir = cli.report_dir.as_deref().map(PathBuf::from);
 
     // Parse binary
@@ -286,7 +288,7 @@ fn main() -> anyhow::Result<()> {
     let mut output = String::new();
 
     // Add header
-    output.push_str("// Decompiled by decompiler\n");
+    output.push_str("// Decompiled by reverse-engineering\n");
     output.push_str(&format!("// Binary: {}\n", cli.input));
     output.push_str(&format!("// Format: {}\n", binary.format().name()));
     output.push_str(&format!("// Architecture: {}\n", binary.architecture()));
@@ -580,8 +582,8 @@ fn format_analysis_report_text(
 ) -> String {
     let summary = &package.summary;
     let mut report = String::new();
-    report.push_str("cyberm4fia-re analysis report\n");
-    report.push_str("==============================\n\n");
+    report.push_str("reverse-engineering analysis report\n");
+    report.push_str("===================================\n\n");
     report.push_str(&format!("Binary: {}\n", summary.input_path));
     report.push_str(&format!("Format: {}\n", summary.format));
     report.push_str(&format!("Architecture: {}\n", summary.architecture));
@@ -693,8 +695,8 @@ fn format_analysis_report_text(
 
 fn format_behavior_report_text(package: &AnalysisReportPackage) -> String {
     let mut report = String::new();
-    report.push_str("cyberm4fia-re behavior report\n");
-    report.push_str("===============================\n\n");
+    report.push_str("reverse-engineering behavior report\n");
+    report.push_str("===================================\n\n");
     report.push_str(&format!("Risk: {}\n", package.behavior_report.risk_level));
     report.push_str(&format!(
         "Score: {}/100\n",
@@ -781,8 +783,8 @@ fn format_runtime_artifact_report(
     artifact_result: &RuntimeArtifactResult,
 ) -> String {
     let mut report = String::new();
-    report.push_str("cyberm4fia-re runtime artifact report\n");
-    report.push_str("======================================\n\n");
+    report.push_str("reverse-engineering runtime artifact report\n");
+    report.push_str("===========================================\n\n");
 
     if runtime_matches.is_empty() {
         report.push_str("No runtime/language family hints detected.\n");

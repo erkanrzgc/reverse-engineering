@@ -1,4 +1,4 @@
-//! Decompiler - Binary to source code decompiler
+//! Reverse Engineering - binary-to-source decompilation tools.
 //!
 //! This library provides functionality to decompile compiled binaries
 //! back to readable source code.
