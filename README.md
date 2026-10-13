@@ -209,6 +209,10 @@ The optional [REA/Ghidra validation lane](docs/REA_VALIDATION.md) compares a
 repository-owned native PE fixture, generated C and independent native outcomes,
 with saved provider evidence and explicit deadlines/partial results.
 
+The [current reassessment](docs/PROJECT_REASSESSMENT_2026-10-13.md) documents the
+remaining C correctness limits. The [dataset research](docs/DATASET_RESEARCH_2026-10-13.md)
+compares source/test corpora for expanding independent validation.
+
 ---
 
 ## Project Structure

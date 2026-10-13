@@ -1,0 +1,11 @@
+C:\Users\erkanrzgc\AppData\Local\Temp\rescore-review-20261013\calls.c: In function 'caller':
+C:\Users\erkanrzgc\AppData\Local\Temp\rescore-review-20261013\calls.c:7:5: error: too few arguments to function 'callee'; expected 1, have 0
+    7 |     callee();
+      |     ^~~~~~
+C:\Users\erkanrzgc\AppData\Local\Temp\rescore-review-20261013\calls.c:2:10: note: declared here
+    2 | uint64_t callee(uint64_t rcx);
+      |          ^~~~~~
+C:\Users\erkanrzgc\AppData\Local\Temp\rescore-review-20261013\calls.c:5:14: error: variable 'rcx' set but not used [-Werror=unused-but-set-variable]
+    5 |     uint64_t rcx;
+      |              ^~~
+cc1.exe: all warnings being treated as errors

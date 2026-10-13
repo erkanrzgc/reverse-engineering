@@ -1,0 +1,3 @@
+flags_gap(1): emitted=0 native=1
+looping(3): emitted=1 native=3
+memory_partial(): emitted=55 native=11223355

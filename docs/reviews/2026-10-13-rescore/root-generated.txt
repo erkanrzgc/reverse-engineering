@@ -1,0 +1,85 @@
+// flags_gap
+uint64_t flags_gap(uint64_t rcx) {
+    uint64_t rax;
+    /* 0x1000: cmp ecx,0 */
+    /* 0x1003: nop */
+    if (/* condition: 0x1004 je short 000000000000100Ch */ 1) {
+        rax = (uint32_t)0;
+        return rax;
+    } else {
+        rax = (uint32_t)1;
+        return rax;
+    }
+}
+
+// flags_gap optimized
+uint64_t flags_gap(uint64_t rcx) {
+    uint64_t rax;
+    /* 0x1000: cmp ecx,0 */
+    /* 0x1003: nop */
+    if (/* condition: 0x1004 je short 000000000000100Ch */ 1) {
+        rax = (uint32_t)0;
+        return rax;
+    } else {
+        rax = (uint32_t)1;
+        return rax;
+    }
+}
+
+// looping
+uint64_t looping(uint64_t rcx) {
+    uint64_t rax;
+    rax = (uint32_t)0;
+    rax = (uint32_t)((uint64_t)(uint32_t)rax + 1);
+    rcx = (uint32_t)((uint64_t)(uint32_t)rcx - 1);
+    /* 0x1009: jne short 0000000000001005h */
+    rax = (uint32_t)(uint64_t)(uint32_t)rax;
+    return rax;
+}
+
+// looping optimized
+uint64_t looping(uint64_t rcx) {
+    uint64_t rax;
+    rax = (uint32_t)0;
+    rax = (uint32_t)((uint64_t)(uint32_t)rax + 1);
+    rcx = (uint32_t)((uint64_t)(uint32_t)rcx - 1);
+    /* 0x1009: jne short 0000000000001005h */
+    rax = (uint32_t)(uint64_t)(uint32_t)rax;
+    return rax;
+}
+
+// memory_partial
+uint64_t memory_partial(void) {
+    uint64_t local_8;
+    uint64_t rax;
+    local_8 = (uint32_t)287454020;
+    local_8 = (uint8_t)85;
+    rax = (uint32_t)(uint64_t)(uint32_t)local_8;
+    return rax;
+}
+
+// memory_partial optimized
+uint64_t memory_partial(void) {
+    uint64_t local_8;
+    uint64_t rax;
+    local_8 = (uint32_t)287454020;
+    local_8 = (uint8_t)85;
+    rax = (uint32_t)(uint64_t)(uint32_t)local_8;
+    return rax;
+}
+
+uint64_t caller(void) {
+    uint64_t rax;
+    uint64_t rcx;
+    rcx = (uint32_t)5;
+    callee();
+    rax = (uint32_t)((uint64_t)(uint32_t)rax + 1);
+    return rax;
+}
+
+uint64_t callee(uint64_t rcx) {
+    uint64_t rax;
+    rax = (uint32_t)(uint64_t)(uint32_t)rcx;
+    return rax;
+}
+
