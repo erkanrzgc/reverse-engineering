@@ -1,265 +1,116 @@
-<h1 align="center">cyberm4fia-re</h1>
+# reverse-engineering
 
-<p align="center">
-  <img src="https://img.shields.io/badge/mission-reverse%20engineering%20via%20rust-red?style=for-the-badge" alt="mission">
-</p>
+A Rust toolkit for static binary analysis, control-flow exploration, and experimental C reconstruction.
 
-<table align="center"><tr><td valign="middle">
-<pre>
- ██████╗██╗   ██╗██████╗ ███████╗██████╗ ███╗   ███╗██╗  ██╗███████╗██╗ █████╗
-██╔════╝╚██╗ ██╔╝██╔══██╗██╔════╝██╔══██╗████╗ ████║██║  ██║██╔════╝██║██╔══██╗
-██║      ╚████╔╝ ██████╔╝█████╗  ██████╔╝██╔████╔██║███████║█████╗  ██║███████║
-██║       ╚██╔╝  ██╔══██╗██╔══╝  ██╔══██╗██║╚██╔╝██║╚════██║██╔══╝  ██║██╔══██║
-╚██████╗   ██║   ██████╔╝███████╗██║  ██║██║ ╚═╝ ██║     ██║██║     ██║██║  ██║
- ╚═════╝   ╚═╝   ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝     ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝
+[![Rust 1.87+](https://img.shields.io/badge/Rust-1.87%2B-93450a?logo=rust)](https://github.com/erkanrzgc/reverse-engineering/blob/feat/rea-validation/Cargo.toml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-2563eb)](LICENSE)
+[![Status: Experimental](https://img.shields.io/badge/Status-Experimental-64748b)](#current-scope)
 
-</pre>
-</td><td valign="middle">
-<img src="assets/reverse-engineering.png" width="150" alt="reverse engineering">
-</td></tr></table>
+Inspect executable structure, follow function and string references, and produce readable reports or structured JSON from ELF, PE, and Mach-O binaries. The analyzer runs locally and does not execute the input binary.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/rust-1.75+-blue?style=flat-square&logo=rust" alt="rust">
-  <img src="https://img.shields.io/badge/crates-12+-purple?style=flat-square" alt="crates">
-  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
-  <img src="https://img.shields.io/badge/tests-127%20passing-orange?style=flat-square" alt="tests">
-  <img src="https://img.shields.io/github/last-commit/erkanrzgc/cyberm4fia-re?style=flat-square" alt="last commit">
-</p>
+## Capabilities
 
-<p align="center">
-  <b>cyberm4fia-re</b> is a Rust-powered binary decompiler for ELF, PE, and Mach-O executables —
-  disassembles x86 & ARM, detects runtime/language families, emits runtime-specific analysis reports,
-  extracts runtime artifacts, writes complete reverse-engineering report packages,
-  suggests CyberChef decode recipes with one-click deep links for encoded strings,
-  classifies imported APIs into behavior categories, resolves PE import-address table calls, builds XREF indexes,
-  builds control-flow graphs, detects functions, seeds tail-call targets, flags thunk and jump-table candidates,
-  inventories PE data directories, recovers simple stack variables and calling-convention parameters,
-  annotates string references, and generates syntax-safe readable C code or machine-readable JSON.
-</p>
+| Area | What you can inspect |
+| --- | --- |
+| Binary structure | Sections, entry points, imports, exports, and PE data directories |
+| Disassembly | x86/x86-64 instructions through iced-x86; ARM/AArch64 through Capstone |
+| Control flow | Function candidates, basic blocks, call graphs, cross-references, and thunk/jump-table candidates |
+| Strings and APIs | Address-aware string references, PE import-address resolution, behavior indicators, and suggested CyberChef recipes |
+| Runtime hints | Python, Dart/Flutter, .NET, Go, Rust, Electron/Node, and JVM indicators, with artifact inventories where available |
+| Reconstruction | Approximate C output with partial recovery of expressions, conditions, parameters, and stack variables |
+| Integration | Versioned JSON results, structured diagnostics, report packages, and configurable extraction limits |
 
----
+Behavior indicators and runtime hints support analyst review; they do not establish a malware verdict or guarantee source recovery.
 
-## Features
+## Supported inputs
 
-### Binary Formats
+| Format | Typical inputs |
+| --- | --- |
+| ELF | Linux/Unix executables and shared objects |
+| PE | Windows executables and DLLs |
+| Mach-O | macOS executables and dynamic libraries |
 
-| Format | Description |
-|--------|-------------|
-| **ELF** | Linux/Unix executables and shared objects |
-| **PE** | Windows `.exe` and `.dll` (32-bit & 64-bit) |
-| **Mach-O** | macOS executables and dylibs |
+Instruction decoding covers x86, x86-64, ARM A32, and AArch64 within the supported format/mode combinations. Thumb, identified mixed ARM/Thumb code, big-endian ARM, and ARM32 Mach-O are rejected. Stripped mixed-mode binaries and universal Mach-O inputs need additional care. C reconstruction is primarily developed around x86/x86-64 fixtures.
 
-### Architectures
+## Build and run
 
-| Architecture | Engine |
-|---|---|
-| x86 / x86-64 | `iced-x86` |
-| ARM / AArch64 | `capstone` |
+The current `0.2.0` development version lives on [`feat/rea-validation`](https://github.com/erkanrzgc/reverse-engineering/tree/feat/rea-validation). The examples below target that branch; `master` contains an earlier implementation.
 
-### Decompilation Pipeline
+Install Rust **1.87 or newer** and the native C build tools required by Capstone, then build from source:
 
-| Stage | Description |
-|---|---|
-| **Runtime Detection** | Python/PyInstaller/Nuitka, Dart/Flutter, .NET, Go, Rust, Electron/Node, JVM hints |
-| **Runtime Reports** | Actionable Python extraction, Dart/Flutter snapshot, CLR/IL, Go/Rust, Electron, JVM guidance |
-| **Runtime Artifact Extraction** | Writes `runtime_report.txt`, `artifacts_manifest.json`, Python `.pyc` candidates, PyInstaller CArchive cookie inventory, and Dart/Flutter snapshot inventory |
-| **RE Report Package** | Writes `report.txt`, `decompiled.c`, `functions.json`, `call_graph.json`, `xrefs.json`, `import_xrefs.json`, `sections.json`, `cfg_summary.json`, `strings.json`, `strings_by_function.json`, `suspicious_strings.json`, `cyberchef_recipes.json`, `api_insights.json`, `behavior_report.json`, `behavior_report.txt`, `jump_tables.json`, `pe_directories.json`, `import_addresses.json`, `imports.json`, `exports.json`, and `analysis_package.json` |
-| **CyberChef Recipes** | Suggests CyberChef operation chains and browser-ready CyberChef links for Base64, hex, URL-percent-encoded, and escaped-byte strings |
-| **Behavior Triage** | Groups imported APIs and suspicious strings into filesystem, registry, network, memory, dynamic loading, anti-debug, process execution, process injection, crypto, persistence, and credential categories |
-| **Import Resolution** | Records PE IAT thunk RVAs and resolves indirect calls like `call [IAT]` to `dll!ApiName` in call/XREF reports and generated C |
-| **CFG Construction** | Control-flow graph via `petgraph` |
-| **Function Detection** | Entry point, exports, call targets, tail-call targets, MSVC prologues |
-| **Thunk / Jump-Table Signals** | Marks single-jump tail-call thunks and jump-table-like indirect branches as report candidates |
-| **AST Lifting** | Pseudo-register and stack assignments (`mov`, `xor reg, reg`, `[rbp-8]`, …) |
-| **Structure Recovery** | CFG-aware `if/else` with diamond-shape detection |
-| **Condition Recovery** | `cmp/test + jcc` → human-readable expressions |
-| **Stack Recovery** | x86 `[rbp±off]` / `[rsp±off]` operands → `local_*`, `arg_*`, `stack_*` variables |
-| **Signature Recovery** | Promotes early calling-convention register reads into typed C parameters and simple `rax` returns |
-| **String References** | Remaining asm comments annotate matched addresses as `str_XXXX` symbols |
-| **PE Metadata** | Reports present PE data directories such as imports, exports, resources, TLS, relocations, CLR, and debug data |
-| **C Syntax Hardening** | Escapes strings/comments and sanitizes emitted identifiers |
-| **Optimization** | Constant folding, dead-code elimination |
-| **C Generation** | Address-annotated C output with direct x86/x64 and import-aware call recovery |
-| **CLI Modes** | Supports C output, full report packages, `--json`, `--only-report`, and `--quiet` |
-
----
-
-## Pipeline
-
-```
-parse_binary  ──►  RuntimeDetector  ──►  Runtime hints
-       │
-       └──────►  disasm (x86 / ARM)  ──►  Vec<Instruction>
-                                                    │
-                                         FunctionDetector
-                                   (entry · exports · call-targets · prologues)
-                                                    │
-                                          Vec<FunctionInfo>
-                                                    │
-                                            lift_functions
-                                                    │
-                                          Vec<ast::Function>
-                                                    │
-                                   structure_functions_with_cfg
-                                (ret · if/else · condition recovery)
-                                                    │
-                                  Optimizer::optimize_function
-                                                    │
-                                  CGenerator::generate_function
-                                                    │
-                                               String (C)
+```sh
+git clone --branch feat/rea-validation --single-branch https://github.com/erkanrzgc/reverse-engineering.git
+cd reverse-engineering
+cargo build --locked --release
 ```
 
----
+Generate a C reconstruction:
 
-## Quick Start
-
-```bash
-git clone https://github.com/erkanrzgc/cyberm4fia-re.git
-cd cyberm4fia-re
-cargo build --release
+```sh
+cargo run --locked --release --bin reverse-engineering -- analyze path/to/program -o output/program.c
 ```
 
-```bash
-# Decompile a binary
-cargo run --release -- -i <binary> -o output.c
+Write structured JSON and a report package without C generation or runtime payload extraction:
 
-# With optimization
-cargo run --release -- -i <binary> -o output.c --optimization basic
-
-# Aggressive optimization
-cargo run --release -- -i <binary> -o output.c --optimization aggressive
-
-# Extract runtime-specific artifacts
-cargo run --release -- -i <binary> --extract-runtime-artifacts --artifacts-dir artifacts
-
-# Produce a complete reverse-engineering report package
-cargo run --release -- -i <binary> --report-dir out
-
-# Print machine-readable analysis JSON
-cargo run --release -- -i <binary> --json --quiet
-
-# Build reports without generated C
-cargo run --release -- -i <binary> --report-dir out --only-report --quiet
+```sh
+cargo run --locked --release --bin reverse-engineering -- analyze path/to/program --only-report --report-dir output/reports -o output/analysis.json --quiet
 ```
 
-Runtime artifact extraction writes `runtime_report.txt`, `artifacts_manifest.json`,
-and any safely identified payloads such as Python `.pyc` candidates. Dart/Flutter
-AOT inputs are inventoried as snapshots/markers; exact Dart source recovery is
-not claimed.
+Produce JSON, reports, and available runtime artifacts together:
 
-Report package mode writes `report.txt`, `decompiled.c`, `functions.json`,
-`call_graph.json`, `xrefs.json`, `import_xrefs.json`, `sections.json`,
-`cfg_summary.json`, `strings.json`, `strings_by_function.json`,
-`suspicious_strings.json`, `cyberchef_recipes.json`, `api_insights.json`,
-`behavior_report.json`, `behavior_report.txt`, `jump_tables.json`,
-`pe_directories.json`, `import_addresses.json`, `imports.json`,
-`exports.json`, and `analysis_package.json`. Function reports include direct x86/x64 call
-targets, tail-call targets, PE import-address table call targets, grouped call graph edges,
-caller/callee XREFs, basic-block estimates, and exact string references when
-the binary exposes referenced string addresses. PE reports also expose present
-data directories such as resources, TLS, relocations, CLR, debug, imports, and
-exports. Generated C also emits import declarations, recovers simple parameters
-and return values, and turns resolvable IAT calls into readable API calls. Behavior
-reports classify high-signal imports and suspicious strings for quick triage;
-CyberChef recipe reports point analysts at likely decode steps and include
-ready-to-open CyberChef links. They are
-indicators, not a malware verdict.
-
-**Windows smoke test:**
-```bash
-cargo run --release -- -i C:\Windows\System32\notepad.exe -o notepad.c
-# → 672 functions · 48,053 instructions · 52,000+ lines of C
+```sh
+cargo run --locked --release --bin reverse-engineering -- analyze path/to/program --format json --report-dir output/reports --artifacts-dir output/artifacts -o output/analysis.json
 ```
 
----
+Use `analyze --help` to see all options. C output uses `basic` optimization by default; `--optimization none` and `--optimization aggressive` select the other modes. Without `-o`, the selected C or JSON output goes to stdout. Logs and diagnostics go to stderr; `--quiet` still preserves warnings.
 
-## Output Sample
+## Reports and artifacts
 
-```c
-// 0x11BF  sub_11BF  (export)
-void sub_11BF(void) {
-    uint64_t rax;
-    uint64_t r8b;
-    /* 0x11BF: sub rsp,98h */
-    /* 0x11C6: mov rax,[34400h] */
-    rax = 0;
-    if ((r8b == 0)) {
-        return;
-    }
-    sub_140012340();
-    /* 0x11DE: xor rax,rsp */
-}
+| Output | Contents |
+| --- | --- |
+| `analysis.json` | Full analysis result, status, diagnostics, and selected outputs; the filename is chosen with `-o` |
+| `report.txt`, `analysis_package.json` | Human-readable summary and structured report package |
+| `functions.json`, `call_graph.json`, `xrefs.json`, `cfg_summary.json` | Function relationships and control-flow summaries |
+| `strings.json`, `strings_by_function.json`, `import_xrefs.json` | Strings and import references linked to their analysis context |
+| `behavior_report.*`, `api_insights.json`, `cyberchef_recipes.json` | Behavior indicators, API classifications, and decoding suggestions |
+| `sections.json`, `imports.json`, `exports.json`, `pe_directories.json` | Binary metadata |
+| `decompiled.c` | Approximate C reconstruction when C generation is enabled |
+| `artifacts_manifest.json`, `runtime_report.txt` | Runtime artifact provenance, capture status, and extraction notes |
+
+The JSON result contract is documented in the [analysis schema](https://github.com/erkanrzgc/reverse-engineering/blob/feat/rea-validation/docs/schema/analysis-result-v1.schema.json). Runtime payloads may include Python `.pyc` candidates; Dart/Flutter snapshot inventories do not imply recovery of the original Dart source.
+
+Default limits are **512 MiB per input**, **100,000 extracted strings**, **1,024 runtime artifacts**, and **16 MiB of captured artifact payloads**. Adjust them with `--max-input-bytes`, `--max-extracted-strings`, `--max-runtime-artifacts`, and `--max-runtime-artifact-bytes`. Instruction counts and total CFG/AST memory do not yet have dedicated limits.
+
+For automation, exit codes distinguish completed analysis (`0`), invalid CLI usage (`2`), analysis/output failure (`3`), and partial analysis (`4`). Inspect the result status and diagnostics alongside the exit code.
+
+## Current scope
+
+This is an experimental analysis tool. A `complete` result means the selected analysis pipeline finished; it does not establish that the generated C is semantically equivalent to the input.
+
+General loop recovery, flag propagation across instructions, call signatures, overlapping stack accesses, and indirect control flow remain incomplete. Unsupported instructions may remain as assembly comments, and generated C may require manual correction. The [latest technical assessment](https://github.com/erkanrzgc/reverse-engineering/blob/feat/rea-validation/docs/PROJECT_REASSESSMENT_2026-10-13.md) records reproduced issues and the evidence behind them.
+
+## Development and validation
+
+```sh
+cargo fmt -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-features
 ```
 
----
+The test suites cover parsers, disassembly, reports, CLI behavior, and real-byte regressions. Selected x86/x64 reconstruction fixtures are compiled and compared with native behavior when GCC is available.
 
-## Tests
+An optional [REA/Ghidra comparison workflow](https://github.com/erkanrzgc/reverse-engineering/blob/feat/rea-validation/docs/REA_VALIDATION.md) retains provider output and compares a controlled fixture against an independent native oracle. REA, Ghidra, Java, and Node.js are not required to run the Rust analyzer. Agreement with another decompiler is supporting evidence rather than proof of correctness.
 
-```bash
-cargo test                  # all suites (unit + integration)
-cargo test --lib            # unit tests only
-cargo test --test binary_fixtures   # integration: format parsers
-```
+## Documentation and contributions
 
-Current suite: **235 unit + 10 integration tests** (245 total).
+- [Contributing](https://github.com/erkanrzgc/reverse-engineering/blob/feat/rea-validation/CONTRIBUTING.md): development workflow and contribution guidelines.
+- [Security policy](https://github.com/erkanrzgc/reverse-engineering/blob/feat/rea-validation/SECURITY.md): reporting vulnerabilities.
+- [Technical assessment](https://github.com/erkanrzgc/reverse-engineering/blob/feat/rea-validation/docs/PROJECT_REASSESSMENT_2026-10-13.md): current strengths, limitations, and reproducible findings.
+- [Dataset research](https://github.com/erkanrzgc/reverse-engineering/blob/feat/rea-validation/docs/DATASET_RESEARCH_2026-10-13.md): candidate evaluation corpora, licensing, and benchmark boundaries.
+- [REA validation](https://github.com/erkanrzgc/reverse-engineering/blob/feat/rea-validation/docs/REA_VALIDATION.md): setup, comparison procedure, and evidence provenance.
 
-| Module | Tests |
-|---|---|
-| `disasm::x86` | 5 |
-| `disasm::arm` | 10 |
-| `disasm::control_flow` | 6 |
-| `disasm::ir` | 8 |
-| `binary::parser` | 5 |
-| `binary::pe` | 1 |
-| `analysis::cyberchef` | 4 |
-| `analysis::functions` | 8 |
-| `analysis::patterns` | 7 |
-| `analysis::report` | 14 |
-| `analysis::runtime` | 10 |
-| `analysis::runtime_artifacts` | 5 |
-| `analysis::runtime_report` | 4 |
-| `analysis::strings` | 7 |
-| `analysis::types` | 16 |
-| `decompiler::ast` | 6 |
-| `decompiler::c_generator` | 17 |
-| `decompiler::c_syntax` | 12 |
-| `decompiler::lifter` | 10 |
-| `decompiler::optimization` | 15 |
-| `decompiler::signatures` | 16 |
-| `decompiler::string_refs` | 6 |
-| `decompiler::structure` (IR helpers) | 22 |
-| `decompiler::structure_tests` (CFG end-to-end) | 18 |
-| `utils::error` | 3 |
-| `tests/binary_fixtures.rs` (ELF · PE · Mach-O) | 7 |
-| `tests/golden_decompile.rs` | 3 |
-
-**Integration fixtures** under `tests/fixtures/binary/` are vendored from the
-[`goblin`](https://github.com/m4b/goblin) crate (MIT, m4b) — see
-`tests/fixtures/binary/ATTRIBUTION.md` for licensing.
-
----
-
-## Project Structure
-
-```
-src/
-├── binary/         # ELF · PE · Mach-O parsing  (goblin)
-├── disasm/         # x86 (iced-x86) · ARM (capstone) · CFG
-├── analysis/       # function detection · runtime hints/reports · string extraction · types
-├── decompiler/     # AST · lifter · structure · string refs · C syntax helpers · optimizer · C gen
-└── utils/          # error types
-```
-
----
-
-## Legal Disclaimer
-
-> **This tool is for authorized reverse engineering and educational purposes only.**
-> The developers assume no liability for misuse.
-
----
+Useful contributions include small reproducible binaries, known-source regression cases, parser improvements, and report correctness fixes. Include the input architecture, format, expected behavior, and tool version when reporting a bug.
 
 ## License
 
-This project is licensed under the MIT License. See the LICENSE file for more details.
+Licensed under the [MIT License](LICENSE). Vendored binary fixtures have their own [attribution notes](tests/fixtures/binary/ATTRIBUTION.md).
