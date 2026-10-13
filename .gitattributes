@@ -1,0 +1,2 @@
+# Preserve captured evidence bytes so manifest SHA-256 values survive checkout.
+docs/reviews/** -text -whitespace
