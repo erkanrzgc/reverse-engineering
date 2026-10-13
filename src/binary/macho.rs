@@ -28,6 +28,7 @@ impl BinaryParser for MachOParser {
 /// Mach-O binary information (owned)
 pub struct MachOBinary {
     architecture: &'static str,
+    unsupported_disassembly_reason: Option<&'static str>,
     entry_point: u64,
     sections: Vec<SectionInfo>,
     imports: Vec<ImportInfo>,
@@ -41,6 +42,7 @@ impl MachOBinary {
             Mach::Fat(_) => {
                 return Self {
                     architecture: "Fat (Multi-arch)",
+                    unsupported_disassembly_reason: None,
                     entry_point: 0,
                     sections: vec![],
                     imports: vec![],
@@ -58,6 +60,15 @@ impl MachOBinary {
         };
 
         let entry_point = macho.entry;
+        let unsupported_disassembly_reason = if matches!(architecture, "ARM" | "ARM64")
+            && !macho.little_endian
+        {
+            Some("Big-endian ARM Mach-O instruction mode is unsupported by the configured decoder")
+        } else if architecture == "ARM" {
+            Some("32-bit ARM Mach-O instruction mode is unresolved: ARM/Thumb mode selection is unsupported")
+        } else {
+            None
+        };
 
         let mut sections: Vec<SectionInfo> = Vec::new();
         for segment in macho.segments.iter() {
@@ -107,13 +118,42 @@ impl MachOBinary {
             Err(_) => vec![],
         };
 
+        // dyld's regular export values are relative to the image's mapped
+        // header segment. __PAGEZERO is not file backed and is not the base.
+        let image_base = macho
+            .segments
+            .iter()
+            .find(|segment| segment.fileoff == 0 && segment.filesize > 0)
+            .map(|segment| segment.vmaddr)
+            .unwrap_or(0);
         let exports = match macho.exports() {
             Ok(exps) => exps
                 .into_iter()
-                .map(|export| ExportInfo {
-                    name: export.name,
-                    address: export.offset,
-                    ordinal: None,
+                .map(|export| {
+                    use goblin::mach::exports::{
+                        ExportInfo as MachExportInfo, EXPORT_SYMBOL_FLAGS_KIND_ABSOLUTE,
+                        EXPORT_SYMBOL_FLAGS_KIND_MASK,
+                    };
+                    let address = match export.info {
+                        MachExportInfo::Regular { address, flags }
+                            if flags & EXPORT_SYMBOL_FLAGS_KIND_MASK
+                                == EXPORT_SYMBOL_FLAGS_KIND_ABSOLUTE =>
+                        {
+                            address
+                        }
+                        MachExportInfo::Regular { address, .. } => {
+                            image_base.checked_add(address).unwrap_or(0)
+                        }
+                        MachExportInfo::Stub { stub_offset, .. } => {
+                            image_base.checked_add(u64::from(stub_offset)).unwrap_or(0)
+                        }
+                        MachExportInfo::Reexport { .. } => 0,
+                    };
+                    ExportInfo {
+                        name: export.name,
+                        address,
+                        ordinal: None,
+                    }
                 })
                 .collect(),
             Err(_) => vec![],
@@ -121,6 +161,7 @@ impl MachOBinary {
 
         Self {
             architecture,
+            unsupported_disassembly_reason,
             entry_point,
             sections,
             imports,
@@ -136,6 +177,10 @@ impl BinaryInfo for MachOBinary {
 
     fn architecture(&self) -> &'static str {
         self.architecture
+    }
+
+    fn unsupported_disassembly_reason(&self) -> Option<&'static str> {
+        self.unsupported_disassembly_reason
     }
 
     fn entry_point(&self) -> u64 {

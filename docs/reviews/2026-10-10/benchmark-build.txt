@@ -1,0 +1,45 @@
+   Compiling serde_core v1.0.228
+   Compiling serde v1.0.228
+   Compiling crossbeam-utils v0.8.21
+   Compiling zerocopy v0.8.48
+   Compiling autocfg v1.5.0
+   Compiling rayon-core v1.13.0
+   Compiling windows-sys v0.61.2
+   Compiling either v1.15.0
+   Compiling plotters-backend v0.3.7
+   Compiling ciborium-io v0.2.2
+   Compiling cast v0.3.0
+   Compiling anes v0.1.6
+   Compiling oorandom v11.1.5
+   Compiling zerocopy-derive v0.8.48
+   Compiling itertools v0.10.5
+   Compiling plotters-svg v0.3.7
+   Compiling num-traits v0.2.19
+   Compiling anstyle-wincon v3.0.11
+   Compiling anstyle-query v1.1.5
+   Compiling nu-ansi-term v0.50.3
+   Compiling winapi-util v0.1.11
+   Compiling tempfile v3.27.0
+   Compiling is-terminal v0.4.17
+   Compiling anstream v1.0.0
+   Compiling same-file v1.0.6
+   Compiling crossbeam-epoch v0.9.18
+   Compiling criterion-plot v0.5.0
+   Compiling walkdir v2.5.0
+   Compiling tracing-subscriber v0.3.23
+   Compiling clap_builder v4.6.0
+   Compiling crossbeam-deque v0.8.6
+   Compiling plotters v0.3.7
+   Compiling rayon v1.12.0
+   Compiling serde_json v1.0.149
+   Compiling clap v4.6.1
+   Compiling tinytemplate v1.2.1
+   Compiling reverse-engineering v0.2.0 (C:\Users\erkanrzgc\Desktop\reverse-engineering)
+   Compiling half v2.7.1
+   Compiling ciborium-ll v0.2.2
+   Compiling ciborium v0.2.2
+   Compiling criterion v0.5.1
+    Finished `bench` profile [optimized] target(s) in 24.62s
+  Executable benches src\lib.rs (C:\Users\ERKANR~1\AppData\Local\Temp\reverse-engineering-review-build-20261010\release\deps\reverse_engineering-64761f867113faf7.exe)
+  Executable benches src\main.rs (C:\Users\ERKANR~1\AppData\Local\Temp\reverse-engineering-review-build-20261010\release\deps\reverse_engineering-0c5a767a460c3523.exe)
+  Executable benches\analysis.rs (C:\Users\ERKANR~1\AppData\Local\Temp\reverse-engineering-review-build-20261010\release\deps\analysis-2ced4081d8277e40.exe)

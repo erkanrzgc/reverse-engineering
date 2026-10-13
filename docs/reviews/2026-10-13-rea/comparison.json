@@ -1,0 +1,302 @@
+{
+  "schema_version": "1.0",
+  "created_at": "2026-10-13T10:31:14.583Z",
+  "reference": {
+    "repository": "https://github.com/morluto/rea",
+    "commit": "3b0ea590fcc876fa017946f4cec009d653f02b38",
+    "package_version": "6.4.0"
+  },
+  "host": {
+    "platform": "win32",
+    "arch": "x64",
+    "node": "v24.13.1"
+  },
+  "steps": {
+    "compiler-version": {
+      "command": "gcc",
+      "args": [
+        "--version"
+      ],
+      "status": "complete",
+      "exitCode": 0,
+      "elapsedMs": 88,
+      "stdout": "compiler-version.stdout.txt",
+      "stderr": "compiler-version.stderr.txt",
+      "cleanupIncomplete": false,
+      "stdout_sha256": "e67659863bdd5dc4fc382fe8596716594560ff3c5a0d10019bd13e685956109e",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "build-fixture": {
+      "command": "gcc",
+      "args": [
+        "-nostdlib",
+        "-Wl,--entry=fixture_conditional",
+        "-Wl,--export-all-symbols",
+        "C:\\Users\\erkanrzgc\\Desktop\\reverse-engineering\\tests\\fixtures\\semantic\\cases.S",
+        "-o",
+        "C:\\Users\\erkanrzgc\\Desktop\\reverse-engineering\\docs\\reviews\\2026-10-13-rea\\fixture\\semantic-cases.exe"
+      ],
+      "status": "complete",
+      "exitCode": 0,
+      "elapsedMs": 628,
+      "stdout": "build-fixture.stdout.txt",
+      "stderr": "build-fixture.stderr.txt",
+      "cleanupIncomplete": false,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "build-oracle": {
+      "command": "gcc",
+      "args": [
+        "C:\\Users\\erkanrzgc\\Desktop\\reverse-engineering\\tests\\fixtures\\semantic\\oracle.c",
+        "C:\\Users\\erkanrzgc\\Desktop\\reverse-engineering\\tests\\fixtures\\semantic\\cases.S",
+        "-o",
+        "C:\\Users\\erkanrzgc\\Desktop\\reverse-engineering\\docs\\reviews\\2026-10-13-rea\\fixture\\native-oracle.exe"
+      ],
+      "status": "complete",
+      "exitCode": 0,
+      "elapsedMs": 324,
+      "stdout": "build-oracle.stdout.txt",
+      "stderr": "build-oracle.stderr.txt",
+      "cleanupIncomplete": false,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "native-oracle": {
+      "command": "C:\\Users\\erkanrzgc\\Desktop\\reverse-engineering\\docs\\reviews\\2026-10-13-rea\\fixture\\native-oracle.exe",
+      "args": [],
+      "status": "complete",
+      "exitCode": 0,
+      "elapsedMs": 65,
+      "stdout": "native-oracle.stdout.txt",
+      "stderr": "native-oracle.stderr.txt",
+      "cleanupIncomplete": false,
+      "stdout_sha256": "420990438019d061bee326cdc76dee0a02089a985f4e042ad1425eef747bfe41",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "analyzer-version": {
+      "command": "C:\\Users\\erkanrzgc\\Desktop\\reverse-engineering\\target\\release\\reverse-engineering.exe",
+      "args": [
+        "--version"
+      ],
+      "status": "complete",
+      "exitCode": 0,
+      "elapsedMs": 319,
+      "stdout": "analyzer-version.stdout.txt",
+      "stderr": "analyzer-version.stderr.txt",
+      "cleanupIncomplete": false,
+      "stdout_sha256": "bd50b10d79a6bfd31b70934b446a85466712e9f2fa077822a013e10ec286735c",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "rust-analysis": {
+      "command": "C:\\Users\\erkanrzgc\\Desktop\\reverse-engineering\\target\\release\\reverse-engineering.exe",
+      "args": [
+        "analyze",
+        "C:\\Users\\erkanrzgc\\Desktop\\reverse-engineering\\docs\\reviews\\2026-10-13-rea\\fixture\\semantic-cases.exe",
+        "--format",
+        "json",
+        "--quiet"
+      ],
+      "status": "complete",
+      "exitCode": 0,
+      "elapsedMs": 28,
+      "stdout": "rust-analysis.stdout.txt",
+      "stderr": "rust-analysis.stderr.txt",
+      "cleanupIncomplete": false,
+      "stdout_sha256": "e3ec0e7fd7f9b63fc30025203f3e97de1c490d26d2aba81713b83f03d73640e9",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "build-rust-oracle": {
+      "command": "gcc",
+      "args": [
+        "C:\\Users\\erkanrzgc\\Desktop\\reverse-engineering\\docs\\reviews\\2026-10-13-rea\\rust-generated.c",
+        "C:\\Users\\erkanrzgc\\Desktop\\reverse-engineering\\tests\\fixtures\\semantic\\oracle.c",
+        "-o",
+        "C:\\Users\\erkanrzgc\\Desktop\\reverse-engineering\\docs\\reviews\\2026-10-13-rea\\fixture\\rust-oracle.exe"
+      ],
+      "status": "complete",
+      "exitCode": 0,
+      "elapsedMs": 245,
+      "stdout": "build-rust-oracle.stdout.txt",
+      "stderr": "build-rust-oracle.stderr.txt",
+      "cleanupIncomplete": false,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "rust-oracle": {
+      "command": "C:\\Users\\erkanrzgc\\Desktop\\reverse-engineering\\docs\\reviews\\2026-10-13-rea\\fixture\\rust-oracle.exe",
+      "args": [],
+      "status": "complete",
+      "exitCode": 0,
+      "elapsedMs": 67,
+      "stdout": "rust-oracle.stdout.txt",
+      "stderr": "rust-oracle.stderr.txt",
+      "cleanupIncomplete": false,
+      "stdout_sha256": "420990438019d061bee326cdc76dee0a02089a985f4e042ad1425eef747bfe41",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "rea-doctor": {
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": [
+        "C:\\Users\\erkanrzgc\\AppData\\Local\\reverse-engineering\\providers\\rea\\node_modules\\rea-agents\\scripts\\rea.mjs",
+        "doctor",
+        "--provider",
+        "ghidra",
+        "--json",
+        "--filter-output",
+        "healthy,scope_checks"
+      ],
+      "status": "complete",
+      "exitCode": 0,
+      "elapsedMs": 13219,
+      "stdout": "rea-doctor.stdout.txt",
+      "stderr": "rea-doctor.stderr.txt",
+      "cleanupIncomplete": false,
+      "stdout_sha256": "0435241ef5ec6004fcbee953172a550e86ddc2eca10b565aec2f5a7ab3b6a3d8",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "rea-overview": {
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": [
+        "C:\\Users\\erkanrzgc\\AppData\\Local\\reverse-engineering\\providers\\rea\\node_modules\\rea-agents\\scripts\\rea.mjs",
+        "inspect",
+        "C:\\Users\\erkanrzgc\\Desktop\\reverse-engineering\\docs\\reviews\\2026-10-13-rea\\fixture\\semantic-cases.exe",
+        "--provider",
+        "ghidra",
+        "--format",
+        "json"
+      ],
+      "status": "complete",
+      "exitCode": 0,
+      "elapsedMs": 26579,
+      "stdout": "rea-overview.stdout.txt",
+      "stderr": "rea-overview.stderr.txt",
+      "cleanupIncomplete": false,
+      "stdout_sha256": "c2dad7355d79dc929e569299d5bd2353a6f4ed26fa7f4aacf9296913ad93d18e",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "rea-conditional": {
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": [
+        "C:\\Users\\erkanrzgc\\AppData\\Local\\reverse-engineering\\providers\\rea\\node_modules\\rea-agents\\scripts\\rea.mjs",
+        "decompile",
+        "C:\\Users\\erkanrzgc\\Desktop\\reverse-engineering\\docs\\reviews\\2026-10-13-rea\\fixture\\semantic-cases.exe",
+        "fixture_conditional",
+        "--provider",
+        "ghidra",
+        "--format",
+        "json"
+      ],
+      "status": "complete",
+      "exitCode": 0,
+      "elapsedMs": 21003,
+      "stdout": "rea-conditional.stdout.txt",
+      "stderr": "rea-conditional.stderr.txt",
+      "cleanupIncomplete": false,
+      "stdout_sha256": "babd6d0bfd03c14bd521ae23b975bf7d6adbf8c478df9932d2207b3ef1f33a9f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "provider": {
+    "status": "complete",
+    "name": "ghidra",
+    "package_version": "6.4.0",
+    "doctor_exit_code": 0,
+    "overview_evidence_id": "ev_98fe0a1b0307cdb0cfe4e074c73c00df7b42a3397c3a19db08ff629ccb02885b",
+    "inventory": {
+      "rust_functions": 6,
+      "ghidra_procedures": 6,
+      "rust_string_occurrences": 11,
+      "ghidra_defined_strings": 8
+    },
+    "conditional_evidence_id": "ev_af529fef2f3c51ca3e0a395d1f6af87055b6e74c7bc183ffe69089a6eae36822",
+    "scope": "Same controlled PE: overview inventory and conditional-function pseudocode; no equivalence assertion."
+  },
+  "semantic_equivalence": {
+    "status": "not_established",
+    "reason": "Native fixture outcomes are an independent oracle; provider pseudocode and inventory agreement alone do not prove equivalence.",
+    "fixture_cases": {
+      "status": "verified",
+      "cases": [
+        "conditional_zero",
+        "conditional_one",
+        "imul",
+        "partial",
+        "movzx",
+        "indexed_lea"
+      ],
+      "scope": "Controlled fixture cases only; no general equivalence assertion."
+    }
+  },
+  "source_sha256": {
+    "tests\\fixtures\\semantic\\cases.S": "f4aa875b8649fd796d25606bdb889c930c5cc891d44978e954a11944a08ab594",
+    "tests\\fixtures\\semantic\\oracle.c": "4977694ccd0cbc98387574554955ad77fb3fc9ae7283c454252442c530c675b0"
+  },
+  "native_oracle": {
+    "conditional_zero": 0,
+    "conditional_one": 1,
+    "imul": 21,
+    "partial": 4694,
+    "movzx": 52,
+    "indexed_lea": 116
+  },
+  "binary_sha256": "1dea1a00cb10cde764b9e1407181a9060e50276628a62e236f24e415f24c7182",
+  "analyzer_sha256": "221550529f2d9c69286d4fc635100636216d0f937aa70a066fe95e41ba712448",
+  "rust": {
+    "status": "complete",
+    "binary": {
+      "input_path": "C:\\Users\\erkanrzgc\\Desktop\\reverse-engineering\\docs\\reviews\\2026-10-13-rea\\fixture\\semantic-cases.exe",
+      "format": "PE/EXE",
+      "architecture": "x64",
+      "entry_point": 4096,
+      "input_bytes": 5260,
+      "code_section_count": 1,
+      "instruction_count": 253,
+      "function_count": 6,
+      "string_count": 11
+    },
+    "diagnostics": [],
+    "exports": [
+      {
+        "name": "fixture_conditional",
+        "address": 4096,
+        "ordinal": null
+      },
+      {
+        "name": "fixture_imul",
+        "address": 4110,
+        "ordinal": null
+      },
+      {
+        "name": "fixture_partial",
+        "address": 4114,
+        "ordinal": null
+      },
+      {
+        "name": "fixture_movzx",
+        "address": 4124,
+        "ordinal": null
+      },
+      {
+        "name": "fixture_indexed_lea",
+        "address": 4135,
+        "ordinal": null
+      },
+      {
+        "name": "fixture_string",
+        "address": 4141,
+        "ordinal": null
+      }
+    ],
+    "missing_fixture_exports": []
+  },
+  "rust_oracle": {
+    "conditional_zero": 0,
+    "conditional_one": 1,
+    "imul": 21,
+    "partial": 4694,
+    "movzx": 52,
+    "indexed_lea": 116
+  },
+  "status": "complete"
+}

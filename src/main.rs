@@ -34,8 +34,8 @@ struct AnalyzeArgs {
     input: PathBuf,
     #[arg(short, long)]
     output: Option<PathBuf>,
-    #[arg(short, long, value_enum, default_value_t = Format::C)]
-    format: Format,
+    #[arg(short, long, value_enum)]
+    format: Option<Format>,
     #[arg(short = 'O', long, value_enum, default_value_t = Optimization::Basic)]
     optimization: Optimization,
     #[arg(long, conflicts_with = "verbose")]
@@ -46,15 +46,31 @@ struct AnalyzeArgs {
     report_dir: Option<PathBuf>,
     #[arg(long)]
     artifacts_dir: Option<PathBuf>,
+    /// Build the report without generated C or runtime payload extraction.
+    #[arg(long)]
+    only_report: bool,
     #[arg(long, default_value_t = 512 * 1024 * 1024)]
     max_input_bytes: u64,
     #[arg(long, default_value_t = 100_000)]
     max_extracted_strings: usize,
+    #[arg(long, default_value_t = 1024)]
+    max_runtime_artifacts: usize,
+    #[arg(long, default_value_t = 16 * 1024 * 1024)]
+    max_runtime_artifact_bytes: usize,
 }
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let Commands::Analyze(args) = cli.command;
-    if args.format == Format::C
+    let format = args.format.unwrap_or(if args.only_report {
+        Format::Json
+    } else {
+        Format::C
+    });
+    if args.only_report && format == Format::C {
+        eprintln!("usage error: --only-report requires JSON output; omit --format or select json");
+        return ExitCode::from(2);
+    }
+    if format == Format::C
         && args
             .output
             .as_ref()
@@ -70,10 +86,16 @@ fn main() -> ExitCode {
             Optimization::Basic => OptimizationLevel::Basic,
             Optimization::Aggressive => OptimizationLevel::Aggressive,
         },
-        outputs: OutputSelection::all(),
+        outputs: if args.only_report {
+            OutputSelection::report_only()
+        } else {
+            OutputSelection::all()
+        },
         limits: ResourceLimits {
             max_input_bytes: args.max_input_bytes,
             max_extracted_strings: args.max_extracted_strings,
+            max_runtime_artifacts: args.max_runtime_artifacts,
+            max_runtime_artifact_bytes: args.max_runtime_artifact_bytes,
         },
     };
     let result = match AnalysisEngine::analyze_path(&args.input, &config) {
@@ -90,7 +112,7 @@ fn main() -> ExitCode {
     };
     if let Err(error) = reverse_engineering::output::write_outputs(
         &result,
-        matches!(args.format, Format::Json),
+        matches!(format, Format::Json),
         args.output.as_deref(),
         args.report_dir.as_deref(),
         args.artifacts_dir.as_deref(),

@@ -1,0 +1,10 @@
+DUPLICATE_STRINGS: count=1 addresses=[8192]
+DUPLICATE_STRING_XREF: references_to_second_copy=0
+INTRA_FUNCTION_JMP: incorrectly_labeled_tail_calls=1
+TAIL_CALL_GRAPH: tailcaller_targets=[12288] graph_edges=0 callee_called_by=0
+IAT_TAIL_THUNK: tail_target=[Some("kernel32.dll!CreateFileW")] import_referenced_by=0
+DYNAMIC_IAT_FALSE_MATCH: decoded=call qword ptr [rax+4000h] reported_target=[Some("kernel32.dll!CreateFileW")]
+CRYPTO_INSIGHTS: matched_bcrypt_functions=0
+ARTIFACT_AMPLIFICATION: source_bytes=32777 artifacts=4097
+OVERLAY_MARKERS: file_bytes=1052 parsed_section_bytes=512 runtime_matches=0 runtime_artifacts=0
+STRING_ENCODINGS: utf8_count=0 odd_utf16_count=0 be_utf16_count=0

@@ -24,10 +24,10 @@ jobs:
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             executable: reverse-engineering
-          - os: macos-13
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             executable: reverse-engineering
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             executable: reverse-engineering
     runs-on: ${{ matrix.os }}
@@ -48,6 +48,15 @@ jobs:
             echo "Release tags must match vMAJOR.MINOR.PATCH (got: $GITHUB_REF_NAME)" >&2
             exit 1
           fi
+          package_version=$(sed -n 's/^version = "\([^"]*\)"$/\1/p' Cargo.toml | head -n 1)
+          if [[ "$GITHUB_REF_NAME" != "v$package_version" ]]; then
+            echo "Release tag does not match Cargo.toml version $package_version" >&2
+            exit 1
+          fi
+
+      - name: Validate locked tests before packaging
+        shell: bash
+        run: cargo test --locked --all-features
 
       - name: Build locked release binary
         shell: bash

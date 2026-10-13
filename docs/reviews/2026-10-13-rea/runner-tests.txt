@@ -1,0 +1,13 @@
+✔ child execution preserves UTF-8 across writes and reports nonzero exit (49.9111ms)
+✔ deadline terminates a stalled child instead of claiming evidence (316.9131ms)
+✔ provider output is bounded before parsing (51.7832ms)
+✔ deadline settles even when process-tree termination never returns (3158.7253ms)
+✔ provider text or errors never become verified normalized evidence (1.0796ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3640.4439

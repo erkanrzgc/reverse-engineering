@@ -1,0 +1,413 @@
+   Compiling reverse-engineering v0.2.0 (C:\Users\erkanrzgc\Desktop\reverse-engineering)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.66s
+     Running unittests src\lib.rs (C:\Users\ERKANR~1\AppData\Local\Temp\reverse-engineering-review-build-20261010\debug\deps\reverse_engineering-87a0d88d1f7068f7.exe)
+
+running 245 tests
+test analysis::cyberchef::tests::skips_plain_strings_and_urls ... ok
+test analysis::cyberchef::tests::suggests_url_decode_recipe_for_percent_encoded_values ... ok
+test analysis::cyberchef::tests::suggests_hex_recipe_for_long_hex_payloads ... ok
+test analysis::cyberchef::tests::suggests_base64_recipe_for_encoded_payloads ... ok
+test analysis::functions::tests::msvc_sub_rsp_prologue_seeds_function ... ok
+test analysis::functions::tests::entry_point_seeds_first_function ... ok
+test analysis::functions::tests::unresolved_call_target_outside_instructions_is_ignored ... ok
+test analysis::report::tests::package_maps_exact_string_references ... ok
+test analysis::report::tests::package_marks_tailcall_thunks_and_jump_table_candidates ... ok
+test analysis::functions::tests::empty_instructions_produce_no_functions ... ok
+test analysis::report::tests::api_classifier_avoids_common_prefix_false_positives ... ok
+test analysis::functions::tests::call_targets_are_seeded_as_function_starts ... ok
+test analysis::report::tests::package_maps_direct_calls_to_known_function_names ... ok
+test analysis::report::tests::package_builds_deduplicated_call_graph_edges_with_call_sites ... ok
+test analysis::report::tests::package_indexes_strings_by_function ... ok
+test analysis::functions::tests::function_boundaries_slice_instruction_stream ... ok
+test analysis::report::tests::package_resolves_rip_relative_iat_calls_to_import_names ... ok
+test analysis::functions::tests::exports_name_the_function ... ok
+test analysis::report::tests::package_groups_function_xrefs_with_callers_and_strings ... ok
+test analysis::report::tests::package_classifies_import_apis_into_behavior_report ... ok
+test analysis::functions::tests::tail_jump_targets_are_seeded_as_function_starts ... ok
+test analysis::report::tests::package_includes_sections_cfg_summary_and_suspicious_strings ... ok
+test analysis::report::tests::package_summary_counts_analysis_outputs ... ok
+test analysis::report::tests::package_resolves_indirect_iat_calls_to_import_names ... ok
+test analysis::report::tests::package_suggests_cyberchef_recipes_for_encoded_strings ... ok
+test analysis::report::tests::package_tracks_import_xref_call_sites ... ok
+test analysis::runtime::tests::detects_dart_flutter_aot_snapshot_indicators ... ok
+test analysis::runtime::tests::detects_dotnet_clr_from_imports_and_metadata ... ok
+test analysis::runtime::tests::detects_electron_node_packaged_apps ... ok
+test analysis::runtime::tests::detects_embedded_cpython_without_packager_markers ... ok
+test analysis::runtime::tests::detects_go_runtime_markers ... ok
+test analysis::runtime::tests::detects_jvm_wrappers_and_embedded_class_content ... ok
+test analysis::runtime::tests::detects_rust_runtime_markers ... ok
+test analysis::runtime::tests::detects_pyinstaller_style_python_bundle ... ok
+test analysis::runtime::tests::returns_no_matches_for_empty_inputs ... ok
+test analysis::runtime::tests::ignores_weak_dotnet_metadata_stream_without_clr_markers ... ok
+test analysis::runtime_artifacts::tests::dart_flutter_snapshot_markers_are_inventoried_without_source_claims ... ok
+test analysis::runtime_artifacts::tests::no_runtime_matches_produce_no_artifacts ... ok
+test analysis::runtime_artifacts::tests::pyinstaller_carchive_cookie_is_inventoried_with_address ... ok
+test analysis::runtime_artifacts::tests::python_markers_without_payload_are_inventoried ... ok
+test analysis::runtime_artifacts::tests::python_pyc_magic_produces_extracted_bytecode_candidate ... ok
+test analysis::runtime_report::tests::dart_flutter_report_lists_snapshot_sections_and_aot_limit ... ok
+test analysis::runtime_report::tests::dotnet_report_prefers_il_metadata_decompilation ... ok
+test analysis::runtime_report::tests::no_runtime_matches_produce_no_reports ... ok
+test analysis::runtime_report::tests::python_packaged_report_recommends_archive_and_pyc_recovery ... ok
+test analysis::strings::tests::empty_and_tiny_input_produces_nothing ... ok
+test analysis::strings::tests::extracts_ascii_c_string ... ok
+test analysis::strings::tests::extracts_utf16_le_string ... ok
+test analysis::strings::tests::limited_extraction_stops_at_the_extractor_boundary ... ok
+test analysis::strings::tests::non_printable_bytes_break_runs ... ok
+test analysis::strings::tests::preserves_repeated_string_locations ... ok
+test analysis::strings::tests::limited_extraction_returns_immediately_for_zero_allowance ... ok
+test analysis::strings::tests::respects_base_address_offset ... ok
+test analysis::strings::tests::skips_strings_shorter_than_min_length ... ok
+test analysis::types::tests::array_types_map_to_char_or_void_brackets ... ok
+test analysis::types::tests::infer_from_x86_lea_returns_pointer_type ... ok
+test analysis::types::tests::function_pointer_and_unknown_have_conservative_defaults ... ok
+test analysis::types::tests::infer_from_immediate_picks_narrowest_unsigned_type_that_fits ... ok
+test analysis::types::tests::array_size_multiplies_element_size_by_element_count ... ok
+test analysis::types::tests::infer_from_x86_returns_unknown_for_uncategorized_mnemonics ... ok
+test analysis::types::tests::is_integer_is_true_for_all_signed_and_unsigned_integer_widths ... ok
+test analysis::types::tests::is_integer_is_false_for_non_integer_types ... ok
+test analysis::types::tests::pointer_to_other_types_falls_back_to_void_pointer ... ok
+test analysis::types::tests::is_pointer_is_true_for_pointer_and_unknown_but_not_array_or_fnptr ... ok
+test analysis::types::tests::pointer_types_map_void_char_and_uchar_specifically ... ok
+test analysis::types::tests::primitive_types_emit_stdint_aliases ... ok
+test analysis::types::tests::set_and_get_type_round_trip_through_inference_store ... ok
+test analysis::types::tests::size_assumes_64_bit_targets_for_pointers_fnptrs_and_unknown ... ok
+test analysis::types::tests::size_matches_c_stdint_widths_in_bytes ... ok
+test binary::parser::tests::detects_elf_from_magic ... ok
+test binary::parser::tests::detects_macho_both_endians_and_fat ... ok
+test binary::parser::tests::detects_pe_from_mz_header ... ok
+test binary::parser::tests::format_names_stable ... ok
+test binary::parser::tests::returns_none_for_garbage_and_tiny_input ... ok
+test binary::pe::tests::pe_data_directory_names_cover_resource_tls_and_reloc ... ok
+test decompiler::ast::tests::ast_node_type_equality_distinguishes_variants ... ok
+test decompiler::ast::tests::from_expression_tags_node_type_and_only_populates_expression_slot ... ok
+test decompiler::ast::tests::from_function_tags_node_type_and_only_populates_function_slot ... ok
+test decompiler::ast::tests::from_statement_tags_node_type_and_only_populates_statement_slot ... ok
+test decompiler::ast::tests::function_struct_supports_clone_and_preserves_signature_fields ... ok
+test decompiler::ast::tests::operator_enums_compare_by_variant ... ok
+test binary::parser::tests::parses_binary_directly_from_one_byte_buffer ... ok
+test decompiler::c_generator::tests::array_access_and_dereference_render_with_pointer_syntax ... ok
+test decompiler::c_generator::tests::binary_operation_is_fully_parenthesized ... ok
+test decompiler::c_generator::tests::block_statement_emits_braces_and_indents_body ... ok
+test decompiler::c_generator::tests::break_continue_render_as_keywords ... ok
+test decompiler::c_generator::tests::cast_renders_in_c_parenthesized_form ... ok
+test decompiler::c_generator::tests::empty_parameter_list_emits_void_in_signature ... ok
+test decompiler::c_generator::tests::function_call_sanitizes_name_and_joins_arguments_with_comma_space ... ok
+test decompiler::c_generator::tests::function_name_is_sanitized_to_valid_c_identifier ... ok
+test decompiler::c_generator::tests::if_else_indents_nested_blocks_with_four_spaces ... ok
+test decompiler::c_generator::tests::inline_asm_becomes_address_prefixed_c_comment_with_sanitized_terminator ... ok
+test decompiler::c_generator::tests::parameters_render_with_types_and_sanitized_names ... ok
+test decompiler::c_generator::tests::return_none_renders_as_bare_return ... ok
+test decompiler::c_generator::tests::return_with_value_renders_expression ... ok
+test decompiler::c_generator::tests::string_literal_is_escaped_and_double_quoted ... ok
+test decompiler::c_generator::tests::unary_negate_emits_minus_prefix_without_space ... ok
+test decompiler::c_generator::tests::variable_declaration_with_and_without_init ... ok
+test decompiler::c_generator::tests::variable_keyword_collisions_get_suffixed ... ok
+test decompiler::c_syntax::tests::avoids_c_keywords ... ok
+test decompiler::c_syntax::tests::avoids_reserved_leading_underscore_identifiers ... ok
+test analysis::types::tests::infer_from_x86_mov_immediate_uses_immediate_width_classifier ... ok
+test decompiler::c_syntax::tests::escapes_non_ascii_utf8_bytes_as_octal ... ok
+test decompiler::c_syntax::tests::escapes_nul_and_non_printable_bytes_as_fixed_width_octal ... ok
+test decompiler::c_syntax::tests::escapes_quotes_backslashes_and_common_control_characters ... ok
+test decompiler::c_syntax::tests::makes_identifiers_unique_deterministically ... ok
+test decompiler::c_syntax::tests::prefixes_identifiers_that_start_with_digits ... ok
+test decompiler::c_syntax::tests::preserves_valid_trailing_underscores ... ok
+test decompiler::c_syntax::tests::quotes_c_string_literals ... ok
+test decompiler::c_syntax::tests::sanitizes_c_block_comment_terminators ... ok
+test decompiler::c_syntax::tests::sanitizes_invalid_identifier_characters ... ok
+test decompiler::c_syntax::tests::sanitizes_line_comment_controls_and_delimiters ... ok
+test decompiler::c_syntax::tests::sanitizes_line_splicing_tokens ... ok
+test decompiler::c_syntax::tests::uses_fallback_when_identifier_has_no_valid_body ... ok
+test decompiler::lifter::ir_lifting_tests::canonicalize_register_name_normalizes_sizes ... ok
+test decompiler::lifter::ir_lifting_tests::lift_add_reg_imm_produces_assignment ... ok
+test decompiler::lifter::ir_lifting_tests::lift_and_or_xor_shift_produces_binary_op ... ok
+test decompiler::lifter::ir_lifting_tests::lift_inc_reg_produces_add_one ... ok
+test decompiler::lifter::ir_lifting_tests::lift_memory_mov_rbp_offset_becomes_stack_var_assignment ... ok
+test decompiler::lifter::ir_lifting_tests::lift_mov_reg_imm_becomes_assignment ... ok
+test decompiler::lifter::ir_lifting_tests::lift_neg_reg_produces_unary_assignment ... ok
+test decompiler::lifter::ir_lifting_tests::lift_sub_reg_reg_produces_assignment ... ok
+test decompiler::lifter::ir_lifting_tests::no_ir_falls_back_to_inline_asm ... ok
+test decompiler::lifter::ir_lifting_tests::unsupported_mnemonic_falls_back_to_inline_asm ... ok
+test decompiler::optimization::tests::aggressive_prunes_inside_if_branches_independently ... ok
+test decompiler::optimization::tests::aggressive_prunes_statements_after_return_in_top_level ... ok
+test decompiler::optimization::tests::basic_level_does_not_prune_dead_code ... ok
+test decompiler::optimization::tests::basic_level_drops_empty_statements ... ok
+test decompiler::optimization::tests::does_not_fold_comparison_or_logical_operators ... ok
+test decompiler::optimization::tests::does_not_fold_when_either_operand_is_non_literal ... ok
+test decompiler::optimization::tests::fold_constant_leaves_division_by_zero_unfolded_instead_of_panicking ... ok
+test decompiler::optimization::tests::fold_constant_leaves_division_overflow_unfolded ... ok
+test decompiler::optimization::tests::fold_constant_leaves_modulo_by_zero_unfolded_instead_of_panicking ... ok
+test decompiler::optimization::tests::fold_constant_leaves_oversized_or_negative_shifts_unfolded ... ok
+test decompiler::optimization::tests::fold_constant_leaves_signed_overflow_unfolded_instead_of_panicking ... ok
+test decompiler::optimization::tests::fold_constant_still_folds_when_arithmetic_is_safe ... ok
+test decompiler::optimization::tests::folds_addition_of_integer_literals ... ok
+test decompiler::optimization::tests::folds_bitwise_and_or_xor_shifts ... ok
+test decompiler::optimization::tests::folds_nested_binary_expressions_bottom_up ... ok
+test decompiler::optimization::tests::level_none_skips_all_optimizations ... ok
+test decompiler::optimization::tests::recurses_into_if_then_else_blocks ... ok
+test decompiler::optimization::tests::recurses_into_unary_assignment_and_function_call_arguments ... ok
+test decompiler::optimization::tests::recurses_into_while_and_for_bodies ... ok
+test decompiler::signatures::tests::canonical_register_collapses_register_class_aliases ... ok
+test decompiler::signatures::tests::canonical_register_rejects_non_register_tokens ... ok
+test decompiler::signatures::tests::does_not_recover_rax_return_when_previous_assigns_a_different_register ... ok
+test decompiler::signatures::tests::infer_parameters_returns_empty_when_abi_is_unknown ... ok
+test decompiler::signatures::tests::infer_parameters_ignores_register_after_it_has_been_written ... ok
+test decompiler::signatures::tests::infer_parameters_stops_at_first_call_or_return ... ok
+test decompiler::signatures::tests::infers_no_parameters_when_no_argument_registers_are_read ... ok
+test decompiler::signatures::tests::infers_used_argument_registers_as_parameters_in_abi_order ... ok
+test decompiler::signatures::tests::non_pe_x64_uses_sysv_argument_registers ... ok
+test decompiler::signatures::tests::pe_x64_uses_microsoft_fastcall_argument_registers ... ok
+test decompiler::signatures::tests::recover_function_signatures_assigns_parameters_only_when_none_preexist ... ok
+test decompiler::signatures::tests::recover_rax_return_is_safe_on_short_or_empty_bodies ... ok
+test decompiler::signatures::tests::recovers_rax_return_when_last_statement_is_assignment_then_void_return ... ok
+test decompiler::signatures::tests::register_in_operand_returns_none_for_pure_immediate ... ok
+test decompiler::signatures::tests::register_in_operand_strips_ptr_size_prefixes ... ok
+test decompiler::signatures::tests::unknown_architecture_has_no_argument_registers ... ok
+test decompiler::string_refs::tests::empty_string_table_is_noop ... ok
+test decompiler::structure::ir_condition_recovery_tests::branch_is_zero_returns_none_for_comparison_branches_that_test_cannot_express ... ok
+test decompiler::structure::ir_condition_recovery_tests::branch_is_zero_returns_true_for_zero_branches_and_false_for_nonzero_branches ... ok
+test decompiler::structure::ir_condition_recovery_tests::cmp_operator_for_branch_maps_every_documented_jcc_alias ... ok
+test decompiler::structure::ir_condition_recovery_tests::cmp_operator_for_branch_returns_none_for_unconditional_or_unknown_mnemonics ... ok
+test decompiler::structure::ir_condition_recovery_tests::comment_condition_escapes_block_comment_terminator_in_every_component ... ok
+test decompiler::structure::ir_condition_recovery_tests::operand_to_expression_canonicalizes_register_aliases_to_class_name ... ok
+test decompiler::structure::ir_condition_recovery_tests::operand_to_expression_produces_integer_literal_for_immediate ... ok
+test decompiler::structure::ir_condition_recovery_tests::operand_to_expression_produces_named_stack_variable_for_rbp_relative_memory ... ok
+test decompiler::structure::ir_condition_recovery_tests::operand_to_expression_returns_none_for_non_stack_memory_and_other_operands ... ok
+test decompiler::structure::ir_condition_recovery_tests::operand_to_text_passes_other_variant_through_unchanged ... ok
+test decompiler::structure::ir_condition_recovery_tests::operand_to_text_renders_memory_with_sign_aware_hex_displacement ... ok
+test decompiler::structure::ir_condition_recovery_tests::operand_to_text_renders_registers_and_immediates_verbatim ... ok
+test decompiler::structure::ir_condition_recovery_tests::recover_cmp_condition_ir_falls_back_to_comment_when_an_operand_is_non_expressible ... ok
+test decompiler::structure::ir_condition_recovery_tests::recover_cmp_condition_ir_returns_none_when_branch_mnemonic_is_unsupported ... ok
+test decompiler::structure::ir_condition_recovery_tests::recover_cmp_condition_ir_with_reg_imm_setup_uses_integer_literal_right_operand ... ok
+test decompiler::structure::ir_condition_recovery_tests::recover_cmp_condition_ir_with_reg_reg_setup_produces_typed_binary_op ... ok
+test decompiler::structure::ir_condition_recovery_tests::recover_test_condition_ir_for_distinct_operands_emits_masked_compare_with_zero ... ok
+test decompiler::structure::ir_condition_recovery_tests::recover_test_condition_ir_for_self_test_emits_register_compared_to_zero ... ok
+test decompiler::structure::ir_condition_recovery_tests::recover_test_condition_ir_returns_none_when_branch_is_not_a_zero_flag_branch ... ok
+test decompiler::structure::ir_condition_recovery_tests::stack_variable_name_from_mem_returns_none_for_general_purpose_or_missing_base ... ok
+test decompiler::structure::ir_condition_recovery_tests::stack_variable_name_from_mem_uses_local_for_negative_rbp_and_arg_for_positive_rbp ... ok
+test decompiler::structure::ir_condition_recovery_tests::stack_variable_name_from_mem_uses_stack_prefixes_for_rsp_relative_slots ... ok
+test decompiler::string_refs::tests::annotates_0x_prefixed_string_addresses ... ok
+test decompiler::string_refs::tests::recurses_into_nested_statement_blocks ... ok
+test decompiler::structure_tests::cfg_diamond_with_join_becomes_if_else_and_keeps_join ... ok
+test decompiler::string_refs::tests::annotates_intel_suffix_hex_string_addresses ... ok
+test decompiler::string_refs::tests::annotates_multiple_references_in_one_instruction ... ok
+test decompiler::string_refs::tests::leaves_unmatched_hex_addresses_unchanged ... ok
+test decompiler::structure_tests::cfg_conditional_with_two_returning_arms_becomes_if_else ... ok
+test decompiler::structure_tests::cfg_path_declares_registers_used_by_assignments ... ok
+test decompiler::structure_tests::cfg_if_keeps_condition_setup_before_the_branch ... ok
+test decompiler::structure_tests::cfg_path_declares_stack_variables_used_by_assignments ... ok
+test decompiler::structure_tests::cfg_path_does_not_redeclare_signature_parameters ... ok
+test decompiler::structure_tests::converts_ret_inline_asm_to_return_statement ... ok
+test decompiler::structure_tests::memory_mov_stays_inline_asm ... ok
+test decompiler::structure_tests::memory_cmp_condition_stays_human_readable_comment ... ok
+test decompiler::structure_tests::mov_register_immediate_becomes_assignment ... ok
+test decompiler::structure_tests::ret_with_stack_adjustment_is_still_void_return ... ok
+test decompiler::structure_tests::memory_test_condition_stays_human_readable_comment ... ok
+test decompiler::structure_tests::signature_recovery_promotes_used_argument_registers_and_rax_return ... ok
+test decompiler::structure_tests::simple_register_test_condition_becomes_executable_expression ... ok
+test decompiler::structure_tests::simple_register_cmp_condition_becomes_executable_expression ... ok
+test decompiler::structure_tests::stack_mov_load_and_store_become_assignments ... ok
+test decompiler::structure_tests::structures_multiple_functions_without_reordering ... ok
+test decompiler::structure_tests::xor_register_with_itself_becomes_zero_assignment ... ok
+test disasm::arm::tests::aarch64_dot_cond_branches_are_conditional ... ok
+test disasm::arm::tests::arm32_cond_suffix_branches_are_conditional ... ok
+test disasm::arm::tests::bitfield_and_bkpt_are_not_branches ... ok
+test disasm::arm::tests::bl_is_call_not_plain_branch ... ok
+test disasm::arm::tests::branches_are_classified_as_control_flow ... ok
+test disasm::arm::tests::compare_and_branch_are_conditional ... ok
+test disasm::arm::tests::ret_and_eret_are_returns ... ok
+test disasm::arm::tests::to_string_format_with_and_without_operands ... ok
+test disasm::arm::tests::unconditional_branch_is_not_conditional ... ok
+test disasm::control_flow::tests::call_has_call_edge_and_fallthrough_when_target_in_stream ... ok
+test disasm::arm::tests::disassembles_aarch64_ret ... ok
+test disasm::control_flow::tests::conditional_branch_creates_two_edges ... ok
+test disasm::control_flow::tests::empty_stream_produces_empty_graph ... ok
+test disasm::control_flow::tests::linear_block_has_single_ret_terminator ... ok
+test disasm::control_flow::tests::unconditional_jump_has_single_edge_and_no_fallthrough ... ok
+test disasm::control_flow::tests::unresolved_branch_target_does_not_create_edge ... ok
+test disasm::ir::tests::instruction_ir_exposes_address_op_and_operands ... ok
+test disasm::ir::tests::is_stack_frame_ref_accepts_rbp_rsp_variants ... ok
+test disasm::ir::tests::is_stack_frame_ref_rejects_baseless_memory ... ok
+test disasm::ir::tests::is_stack_frame_ref_rejects_general_purpose_bases ... ok
+test disasm::ir::tests::is_stack_frame_ref_rejects_indexed_memory_even_with_rbp_base ... ok
+test disasm::ir::tests::memory_operand_frame_helper_sets_no_index_and_scale_one ... ok
+test disasm::ir::tests::operand_other_preserves_raw_text ... ok
+test disasm::ir::tests::operand_variants_compare_equal_by_value ... ok
+test disasm::x86::tests::classifier_call_jmp_jcc_ret ... ok
+test engine::tests::alternate_string_decodings_do_not_redeclare_the_same_c_symbol ... ok
+test utils::error::tests::display_messages_use_human_readable_prefixes ... ok
+test utils::error::tests::io_error_converts_into_library_error_via_from ... ok
+test utils::error::tests::result_type_alias_propagates_through_question_mark ... ok
+test analysis::patterns::tests::matches_malloc_and_free_call_patterns ... ok
+test analysis::patterns::tests::new_pattern_matcher_registers_built_in_pattern_set ... ok
+test analysis::patterns::tests::match_instruction_returns_empty_for_unrelated_single_instruction ... ok
+test analysis::patterns::tests::match_patterns_empty_input_returns_empty_result_and_uses_zero_address ... ok
+test analysis::patterns::tests::match_position_anchors_to_first_instruction_address ... ok
+test analysis::patterns::tests::matches_x64_function_prologue_pattern ... ok
+test analysis::patterns::tests::unrelated_instruction_sequence_produces_no_pattern_matches ... ok
+test disasm::x86::tests::decodes_multiple_instructions_and_preserves_order ... ok
+test disasm::x86::tests::near_call_populates_branch_target ... ok
+test disasm::x86::tests::decodes_sub_rsp_imm ... ok
+test disasm::x86::tests::mov_memory_ref_does_not_set_branch_target ... ok
+
+test result: ok. 245 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running unittests src\main.rs (C:\Users\ERKANR~1\AppData\Local\Temp\reverse-engineering-review-build-20261010\debug\deps\reverse_engineering-28f8cc0143f026da.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\analysis_contract.rs (C:\Users\ERKANR~1\AppData\Local\Temp\reverse-engineering-review-build-20261010\debug\deps\analysis_contract-731ead5e1e13141e.exe)
+
+running 2 tests
+test generated_c_contains_stable_header_and_is_repeatable ... ok
+test elf_and_pe_results_obey_v1_contract_and_are_byte_deterministic ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\analysis_engine.rs (C:\Users\ERKANR~1\AppData\Local\Temp\reverse-engineering-review-build-20261010\debug\deps\analysis_engine-d76853cfec1bb452.exe)
+
+running 9 tests
+test atomic_writer_returns_contextual_error_for_missing_parent ... ok
+test unlimited_input_limit_does_not_overflow ... ok
+test fatal_inputs_return_typed_errors_without_panicking ... ok
+test string_limit_returns_useful_partial_result ... ok
+test atomic_writer_creates_and_replaces_files_without_leaving_temps ... ok
+test analyzes_real_elf_fixture_completely ... ok
+test output_selection_controls_optional_result_payloads ... ok
+test repeated_analysis_serializes_identically ... ok
+test output_selection_supports_every_payload_combination ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\analysis_regressions.rs (C:\Users\ERKANR~1\AppData\Local\Temp\reverse-engineering-review-build-20261010\debug\deps\analysis_regressions-4f262aaa4eca431d.exe)
+
+running 17 tests
+test python_runtime_guidance_requires_candidate_validation_before_decompiling ... ok
+test pyc_payload_capture_obeys_shared_byte_budget_and_marks_partial_candidate ... ok
+test bcrypt_crypto_functions_are_classified ... ok
+test utf16_latin_does_not_fabricate_the_opposite_endian_occurrence ... ok
+test utf8_and_odd_offset_utf16_strings_preserve_encoding ... ok
+test zero_artifact_budget_stops_before_inventory_or_payload_capture ... ok
+test bounded_string_extraction_keeps_small_allowance_and_reports_overflow ... ok
+test report_keeps_a_separate_pe_data_directory_component ... ok
+test repeated_pyinstaller_cookie_metadata_is_bounded_by_default ... ok
+test duplicate_string_occurrences_keep_second_address_xref ... ok
+test true_tail_transfer_populates_graph_callee_and_outgoing_xrefs ... ok
+test ambiguous_encoding_keeps_occurrences_but_string_xref_prefers_ascii ... ok
+test import_tail_thunk_populates_import_caller_index ... ok
+test intra_function_loop_is_not_a_tail_call_or_thunk ... ok
+test dynamic_base_and_index_calls_do_not_resolve_displacement_as_iat ... ok
+test aarch64_direct_calls_and_tail_transfers_use_decoder_targets ... ok
+test an_exact_string_budget_does_not_report_false_truncation ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\binary_fixtures.rs (C:\Users\ERKANR~1\AppData\Local\Temp\reverse-engineering-review-build-20261010\debug\deps\binary_fixtures-db36db9ee5b25a34.exe)
+
+running 7 tests
+test detects_macho_format_from_inline_deadbeef_bytes ... ok
+test from_magic_returns_none_for_input_shorter_than_four_bytes ... ok
+test from_magic_returns_none_for_unknown_signature ... ok
+test parses_minimal_pe64_executable_fixture ... ok
+test macho_parser_accepts_inline_deadbeef_bytes ... ok
+test parses_64bit_elf_shared_object_fixture ... ok
+test parses_32bit_elf_shared_object_fixture ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\binary_regressions.rs (C:\Users\ERKANR~1\AppData\Local\Temp\reverse-engineering-review-build-20261010\debug\deps\binary_regressions-9688cac545f4398d.exe)
+
+running 20 tests
+test big_endian_arm_macho_reports_unsupported_mode ... ok
+test arm32_macho_rejects_unresolved_arm_thumb_mode ... ok
+test arm32_bx_lr_ends_block_without_fallthrough ... ok
+test arm32_beq_preserves_taken_and_fallthrough_edges ... ok
+test arm64_direct_call_discovers_unexported_helper ... ok
+test arm32_predicated_direct_call_is_discovered ... ok
+test elf_nobits_has_virtual_size_without_fake_file_bytes ... ok
+test macho_regular_export_is_image_relative_virtual_address ... ok
+test macho_absolute_export_is_not_rebased ... ok
+test stripped_elf_retains_defined_dynamic_function_exports ... ok
+test x86_rep_ret_ends_block_before_padding ... ok
+test x86_bnd_jump_keeps_its_flow_classification ... ok
+test x86_preserves_prefixes_in_display_evidence ... ok
+test unsorted_duplicate_instructions_do_not_invert_function_slices ... ok
+test real_frame_prologues_span_decoder_instruction_boundaries ... ok
+test x86_counter_branches_preserve_targets_and_cfg_edges ... ok
+test elf_thumb_entry_requires_explicit_mode_diagnostic ... ok
+test overlapping_executable_sections_have_explicit_diagnostic ... ok
+test big_endian_arm_requires_explicit_mode_diagnostic ... ok
+test pe_armnt_requires_explicit_thumb_mode_diagnostic ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\cli_integration.rs (C:\Users\ERKANR~1\AppData\Local\Temp\reverse-engineering-review-build-20261010\debug\deps\cli_integration-629dae80221a39ec.exe)
+
+running 10 tests
+test c_success_is_stdout_only ... ok
+test help_exposes_analyze_without_legacy_input ... ok
+test fatal_input_has_exit_code_three_and_structured_stderr ... ok
+test json_success_is_stdout_only ... ok
+test version_is_available_at_root ... ok
+test string_limit_is_partial_json_with_exit_code_four ... ok
+test conflicting_or_invalid_options_are_usage_errors ... ok
+test filesystem_output_failure_never_emits_stdout ... ok
+test output_and_package_directories_are_created_and_replaced_atomically ... ok
+test cli_replaces_existing_output_and_package_files ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests\decompiler_semantics.rs (C:\Users\ERKANR~1\AppData\Local\Temp\reverse-engineering-review-build-20261010\debug\deps\decompiler_semantics-28cca5ebdc61ddc1.exe)
+
+running 16 tests
+test absolute_memory_call_resolves_the_known_iat_slot ... ok
+test dynamic_memory_call_does_not_resolve_an_iat_displacement ... ok
+test locked_arithmetic_keeps_atomic_semantics_explicitly_unsupported ... ok
+test indexed_frame_memory_is_preserved_as_unsupported ... ok
+test typed_string_annotations_reject_dynamic_displacements_and_resolve_static_ip_targets ... ok
+test movzx_reads_only_the_source_register_width ... ok
+test low_byte_write_preserves_other_register_bits ... ok
+test partial_argument_write_preserves_incoming_upper_bits ... ok
+test lea_computes_address_without_reading_destination_or_memory ... ok
+test extended_low_byte_register_alias_preserves_upper_bits ... ok
+test indexed_lea_recovers_both_address_register_parameters ... ok
+test prefixed_return_keeps_decoded_control_flow_semantics ... ok
+test three_operand_imul_uses_both_source_operands ... ok
+test recovered_parameter_is_not_redeclared_as_local ... ok
+test real_conditional_retains_both_arms_and_matches_source_oracle ... ok
+test signed_and_unsigned_comparisons_use_the_register_view_width ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.91s
+
+     Running tests\golden_decompile.rs (C:\Users\ERKANR~1\AppData\Local\Temp\reverse-engineering-review-build-20261010\debug\deps\golden_decompile-667190a00bfa835d.exe)
+
+running 3 tests
+test golden_signature_recovery_promotes_rcx_and_rax_return ... ok
+test golden_stack_var_is_named_local_and_arg ... ok
+test golden_if_else_cmp_jcc_produces_executable_condition ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\output_regressions.rs (C:\Users\ERKANR~1\AppData\Local\Temp\reverse-engineering-review-build-20261010\debug\deps\output_regressions-8c22b434c586b0fc.exe)
+
+running 3 tests
+test runtime_artifact_limit_is_a_useful_partial_engine_result ... ok
+test report_only_is_available_in_cli_and_omits_generated_c ... ok
+test report_package_contains_promised_text_xrefs_and_pe_directories ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests\package_identity.rs (C:\Users\ERKANR~1\AppData\Local\Temp\reverse-engineering-review-build-20261010\debug\deps\package_identity-a46831f728d0488a.exe)
+
+running 1 test
+test cargo_identity_is_reverse_engineering_v0_2 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests reverse_engineering
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

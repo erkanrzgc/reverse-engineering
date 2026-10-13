@@ -12,10 +12,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with: {components: rustfmt, clippy}
       - run: cargo fmt -- --check
-      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-features
-      - run: cargo build --release
-      - run: cargo bench --no-run
+      - run: cargo build --locked --release
+      - run: cargo bench --locked --no-run
   msrv:
     runs-on: ubuntu-latest
     steps:
@@ -27,5 +27,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@v2
-        with: {tool: cargo-audit, version: 0.21.2}
-      - run: cargo audit --locked
+        with: {tool: cargo-audit@0.22.2}
+      - run: cargo audit --file Cargo.lock --deny unsound
+  comparison-runner:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - run: node --test scripts/rea-compare.test.mjs

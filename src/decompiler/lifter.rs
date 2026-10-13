@@ -112,7 +112,21 @@ fn lift_function_with_name(
     let body: Vec<Statement> = info
         .instructions
         .iter()
-        .map(|instruction| instruction_to_statement(instruction, call_targets))
+        .map(|instruction| {
+            let statement = instruction_to_statement(instruction, call_targets);
+            if matches!(instruction, Instruction::X86(x) if x.ir.is_none())
+                && matches!(statement, Statement::InlineAsm { .. })
+            {
+                // Legacy callers may supply text-only disassembly. Preserve
+                // that narrow compatibility path; decoded IR uses the wrapper.
+                statement
+            } else {
+                Statement::Instruction {
+                    address: instruction.address(),
+                    statement: Box::new(statement),
+                }
+            }
+        })
         .collect();
 
     Function {
@@ -125,6 +139,11 @@ fn lift_function_with_name(
 }
 
 fn instruction_to_statement(instr: &Instruction, call_targets: &HashMap<u64, String>) -> Statement {
+    // Prefixes belong to raw evidence; use decoded control-flow classification
+    // for return semantics (e.g. REP RET), rather than its first display word.
+    if instr.is_return() {
+        return Statement::Return(None);
+    }
     if let Some(function) = call_target_name(instr, call_targets) {
         return Statement::Expression(Expression::FunctionCall {
             function,
@@ -152,7 +171,20 @@ fn call_target_name(instr: &Instruction, call_targets: &HashMap<u64, String>) ->
                 }
             }
 
-            let target = referenced_memory_address(x.address, x.length, &x.operands)?;
+            let target = if let Some(ir) = &x.ir {
+                let Mem(memory) = ir.operands.first()? else {
+                    return None;
+                };
+                if memory.index.is_some()
+                    || !matches!(memory.base.as_deref(), None | Some("rip") | Some("eip"))
+                {
+                    return None;
+                }
+                // iced-x86 stores the effective target for IP-relative memory.
+                memory.disp as u64
+            } else {
+                referenced_memory_address(x.address, x.length, &x.operands)?
+            };
             call_targets.get(&target).cloned()
         }
         _ => None,
@@ -165,6 +197,18 @@ fn referenced_memory_address(address: u64, length: usize, operands: &str) -> Opt
     }
 
     let lower = operands.to_ascii_lowercase();
+    // Legacy manually-built instructions lack IR. Resolve only explicit IP
+    // relative or absolute memory, never a displacement beside a dynamic base.
+    let inside = lower.split_once('[')?.1.split_once(']')?.0;
+    if inside.chars().any(|ch| ch.is_ascii_alphabetic())
+        && !inside.starts_with("rip")
+        && !inside.starts_with("eip")
+        && inside
+            .split(|ch: char| !ch.is_ascii_alphanumeric())
+            .any(|token| register_layout(token).is_some())
+    {
+        return None;
+    }
     let first_hex = collect_hex_addresses(operands).into_iter().next()?;
 
     if lower.contains("rip+") || lower.contains("rip +") {
@@ -231,6 +275,23 @@ fn lift_ir_to_statement(instr: &Instruction) -> Statement {
         };
     };
 
+    if ir.display_text.as_deref().is_some_and(|text| {
+        text.split_whitespace().next().is_some_and(|prefix| {
+            matches!(
+                prefix,
+                "lock" | "xacquire" | "xrelease" | "rep" | "repe" | "repne"
+            )
+        })
+    }) {
+        return Statement::InlineAsm {
+            address,
+            disasm: match instr {
+                Instruction::X86(x) => x.to_string(),
+                Instruction::Arm(a) => a.to_string(),
+            },
+        };
+    }
+
     let Some(expr) = ir_to_expression(ir) else {
         return Statement::InlineAsm {
             address,
@@ -248,9 +309,8 @@ fn lift_ir_to_statement(instr: &Instruction) -> Statement {
 /// can structurally represent.
 fn ir_to_expression(ir: &crate::disasm::ir::InstructionIR) -> Option<Expression> {
     match ir.op.as_str() {
-        "add" | "sub" | "and" | "or" | "xor" | "shl" | "shr" | "lea" | "imul" => {
-            binary_arithmetic(ir)
-        }
+        "add" | "sub" | "and" | "or" | "xor" | "shl" | "shr" | "imul" => binary_arithmetic(ir),
+        "lea" => lea(ir),
         "inc" | "dec" => inc_dec(ir),
         "neg" | "not" => unary_arithmetic(ir),
         "mov" | "movzx" | "movsxd" => simple_mov(ir),
@@ -264,23 +324,40 @@ fn binary_arithmetic(ir: &crate::disasm::ir::InstructionIR) -> Option<Expression
     let left = ir.operands.first()?;
     let right = ir.operands.get(1)?;
     let op = mnemonic_to_binary_op(&ir.op)?;
-
-    let left_expr = operand_to_expr(left)?;
-    let right_expr = operand_to_expr(right)?;
-
-    Some(Expression::Assignment {
-        target: Box::new(left_expr.clone()),
-        value: Box::new(Expression::BinaryOperation {
+    let value = if ir.op == "xor" && left == right {
+        Expression::IntegerLiteral(0)
+    } else if ir.op == "imul" && ir.operands.len() == 3 {
+        binary(
             op,
-            left: Box::new(left_expr),
-            right: Box::new(right_expr),
-        }),
-    })
+            operand_to_expr(right)?,
+            operand_to_expr(&ir.operands[2])?,
+        )
+    } else {
+        if ir.operands.len() != 2 {
+            return None;
+        }
+        let right = operand_to_expr(right)?;
+        let right = if matches!(ir.op.as_str(), "shl" | "shr") {
+            let Reg(register) = left else {
+                return None;
+            };
+            let (_, bits, _) = register_layout(register)?;
+            binary(
+                BinaryOperator::BitwiseAnd,
+                right,
+                Expression::IntegerLiteral(if bits == 64 { 63 } else { 31 }),
+            )
+        } else {
+            right
+        };
+        binary(op, operand_to_expr(left)?, right)
+    };
+    write_operand(left, value)
 }
 
 fn mnemonic_to_binary_op(mnemonic: &str) -> Option<BinaryOperator> {
     match mnemonic {
-        "add" | "lea" => Some(BinaryOperator::Add),
+        "add" => Some(BinaryOperator::Add),
         "sub" => Some(BinaryOperator::Subtract),
         "and" => Some(BinaryOperator::BitwiseAnd),
         "or" => Some(BinaryOperator::BitwiseOr),
@@ -303,14 +380,7 @@ fn inc_dec(ir: &crate::disasm::ir::InstructionIR) -> Option<Expression> {
         BinaryOperator::Subtract
     };
 
-    Some(Expression::Assignment {
-        target: Box::new(expr.clone()),
-        value: Box::new(Expression::BinaryOperation {
-            op,
-            left: Box::new(expr),
-            right: Box::new(Expression::IntegerLiteral(1)),
-        }),
-    })
+    write_operand(operand, binary(op, expr, Expression::IntegerLiteral(1)))
 }
 
 // --- neg / not ---
@@ -324,13 +394,13 @@ fn unary_arithmetic(ir: &crate::disasm::ir::InstructionIR) -> Option<Expression>
         UnaryOperator::BitwiseNot
     };
 
-    Some(Expression::Assignment {
-        target: Box::new(expr.clone()),
-        value: Box::new(Expression::UnaryOperation {
+    write_operand(
+        operand,
+        Expression::UnaryOperation {
             op,
             operand: Box::new(expr),
-        }),
-    })
+        },
+    )
 }
 
 // --- mov (reg/imm only — the one already handled by structure.rs for the
@@ -343,22 +413,208 @@ fn simple_mov(ir: &crate::disasm::ir::InstructionIR) -> Option<Expression> {
     // Only lift when both operands are register or immediate — memory
     // operands (especially with scale/index) fall back to InlineAsm so the
     // structuring pass doesn't emit invalid C.
-    let target_expr = operand_to_expr(left)?;
-    let value_expr = operand_to_expr(right)?;
+    let mut value = operand_to_expr(right)?;
+    if ir.op == "movsxd" {
+        value = cast(TypeInfo::I64, cast(TypeInfo::I32, value));
+    }
+    write_operand(left, value)
+}
 
+fn binary(op: BinaryOperator, left: Expression, right: Expression) -> Expression {
+    Expression::BinaryOperation {
+        op,
+        left: Box::new(left),
+        right: Box::new(right),
+    }
+}
+
+fn cast(type_info: TypeInfo, value: Expression) -> Expression {
+    Expression::Cast {
+        type_info,
+        value: Box::new(value),
+    }
+}
+
+fn unsigned_type(bits: u32) -> Option<TypeInfo> {
+    match bits {
+        8 => Some(TypeInfo::U8),
+        16 => Some(TypeInfo::U16),
+        32 => Some(TypeInfo::U32),
+        64 => Some(TypeInfo::U64),
+        _ => None,
+    }
+}
+
+/// Return the storage register, view width and bit offset for integer GPRs.
+fn register_layout(register: &str) -> Option<(String, u32, u32)> {
+    let name = register.to_ascii_lowercase();
+    let canonical = canonicalize_reg_name(&name);
+    if !matches!(
+        canonical.as_str(),
+        "rax"
+            | "rbx"
+            | "rcx"
+            | "rdx"
+            | "rsi"
+            | "rdi"
+            | "rbp"
+            | "rsp"
+            | "r8"
+            | "r9"
+            | "r10"
+            | "r11"
+            | "r12"
+            | "r13"
+            | "r14"
+            | "r15"
+    ) {
+        return None;
+    }
+    let (bits, offset) = if matches!(name.as_str(), "ah" | "bh" | "ch" | "dh") {
+        (8, 8)
+    } else if matches!(
+        name.as_str(),
+        "al" | "bl" | "cl" | "dl" | "sil" | "dil" | "bpl" | "spl"
+    ) || name.ends_with('b')
+        || name.ends_with('l')
+    {
+        (8, 0)
+    } else if matches!(
+        name.as_str(),
+        "ax" | "bx" | "cx" | "dx" | "si" | "di" | "bp" | "sp"
+    ) || name.ends_with('w')
+    {
+        (16, 0)
+    } else if name.starts_with('e') || name.ends_with('d') {
+        (32, 0)
+    } else {
+        (64, 0)
+    };
+    Some((canonical, bits, offset))
+}
+
+pub(crate) fn register_width(register: &str) -> Option<u32> {
+    register_layout(register).map(|(_, bits, _)| bits)
+}
+
+/// Read a sub-register without losing its width or the high-byte offset.
+pub(crate) fn register_read_expr(register: &str) -> Option<Expression> {
+    let (canonical, bits, offset) = register_layout(register)?;
+    let mut value = Expression::Variable(canonical);
+    if offset != 0 {
+        value = binary(
+            BinaryOperator::RightShift,
+            value,
+            Expression::IntegerLiteral(offset as i64),
+        );
+    }
+    if bits != 64 {
+        // Widen after truncation to keep subsequent arithmetic unsigned, avoiding
+        // signed C integer-promotion overflow for 8/16-bit multiplication.
+        value = cast(TypeInfo::U64, cast(unsigned_type(bits)?, value));
+    }
+    Some(value)
+}
+
+fn write_operand(operand: &Operand, value: Expression) -> Option<Expression> {
+    let (target, value) = match operand {
+        Reg(register) => {
+            let (canonical, bits, offset) = register_layout(register)?;
+            let target = Expression::Variable(canonical);
+            let value = if bits == 64 {
+                value
+            } else if bits == 32 {
+                // Every 32-bit GPR write clears the upper 32 bits in x64.
+                cast(TypeInfo::U32, value)
+            } else {
+                let mask = ((1_i64 << bits) - 1) << offset;
+                let retained = binary(
+                    BinaryOperator::BitwiseAnd,
+                    target.clone(),
+                    Expression::IntegerLiteral(!mask),
+                );
+                let mut inserted = cast(TypeInfo::U64, cast(unsigned_type(bits)?, value));
+                if offset != 0 {
+                    inserted = binary(
+                        BinaryOperator::LeftShift,
+                        inserted,
+                        Expression::IntegerLiteral(offset as i64),
+                    );
+                }
+                binary(BinaryOperator::BitwiseOr, retained, inserted)
+            };
+            (target, value)
+        }
+        Mem(memory) => {
+            let target = stack_var_or_lea(memory)?;
+            let value = match memory.size_bytes {
+                Some(1) => cast(TypeInfo::U8, value),
+                Some(2) => cast(TypeInfo::U16, value),
+                Some(4) => cast(TypeInfo::U32, value),
+                Some(8) => value,
+                _ => return None,
+            };
+            (target, value)
+        }
+        _ => return None,
+    };
     Some(Expression::Assignment {
-        target: Box::new(target_expr),
-        value: Box::new(value_expr),
+        target: Box::new(target),
+        value: Box::new(value),
     })
+}
+
+fn lea(ir: &crate::disasm::ir::InstructionIR) -> Option<Expression> {
+    let destination = ir.operands.first()?;
+    let Mem(memory) = ir.operands.get(1)? else {
+        return None;
+    };
+    if !matches!(memory.scale, 1 | 2 | 4 | 8) {
+        return None;
+    }
+    if matches!(memory.base.as_deref(), Some("rip") | Some("eip")) {
+        // IP-relative displacement is already an effective absolute address.
+        return write_operand(destination, Expression::IntegerLiteral(memory.disp));
+    }
+    let mut address = match &memory.base {
+        Some(base) => register_read_expr(base)?,
+        None => Expression::IntegerLiteral(0),
+    };
+    if let Some(index) = &memory.index {
+        let index = register_read_expr(index)?;
+        let scaled = binary(
+            BinaryOperator::Multiply,
+            index,
+            Expression::IntegerLiteral(memory.scale as i64),
+        );
+        address = binary(BinaryOperator::Add, address, scaled);
+    }
+    if memory.disp != 0 {
+        address = binary(
+            BinaryOperator::Add,
+            address,
+            Expression::IntegerLiteral(memory.disp),
+        );
+    }
+    write_operand(destination, address)
 }
 
 // --- Operand → Expression conversion ---
 
 fn operand_to_expr(operand: &Operand) -> Option<Expression> {
     match operand {
-        Reg(r) => Some(Expression::Variable(canonicalize_reg_name(r))),
+        Reg(r) => register_read_expr(r),
         Imm(v) => Some(Expression::IntegerLiteral(*v)),
-        Mem(mem) => stack_var_or_lea(mem),
+        Mem(mem) => {
+            let value = stack_var_or_lea(mem)?;
+            match mem.size_bytes {
+                Some(1) => Some(cast(TypeInfo::U64, cast(TypeInfo::U8, value))),
+                Some(2) => Some(cast(TypeInfo::U64, cast(TypeInfo::U16, value))),
+                Some(4) => Some(cast(TypeInfo::U64, cast(TypeInfo::U32, value))),
+                Some(8) => Some(value),
+                _ => None,
+            }
+        }
         Other(_) => None,
     }
 }
@@ -367,6 +623,9 @@ fn operand_to_expr(operand: &Operand) -> Option<Expression> {
 /// produce a variable name. For anything with a scale > 1 or an index,
 /// return None so the caller falls back to InlineAsm.
 fn stack_var_or_lea(mem: &MemoryOperand) -> Option<Expression> {
+    if mem.index.is_some() || mem.scale > 1 {
+        return None;
+    }
     if let Some(ref base) = mem.base {
         let lower = base.to_ascii_lowercase();
         if matches!(lower.as_str(), "rbp" | "ebp") {
@@ -396,14 +655,14 @@ fn canonicalize_reg_name(value: &str) -> String {
         "dil" | "di" | "edi" | "rdi" => "rdi",
         "bpl" | "bp" | "ebp" | "rbp" => "rbp",
         "spl" | "sp" | "esp" | "rsp" => "rsp",
-        "r8b" | "r8w" | "r8d" | "r8" => "r8",
-        "r9b" | "r9w" | "r9d" | "r9" => "r9",
-        "r10b" | "r10w" | "r10d" | "r10" => "r10",
-        "r11b" | "r11w" | "r11d" | "r11" => "r11",
-        "r12b" | "r12w" | "r12d" | "r12" => "r12",
-        "r13b" | "r13w" | "r13d" | "r13" => "r13",
-        "r14b" | "r14w" | "r14d" | "r14" => "r14",
-        "r15b" | "r15w" | "r15d" | "r15" => "r15",
+        "r8b" | "r8l" | "r8w" | "r8d" | "r8" => "r8",
+        "r9b" | "r9l" | "r9w" | "r9d" | "r9" => "r9",
+        "r10b" | "r10l" | "r10w" | "r10d" | "r10" => "r10",
+        "r11b" | "r11l" | "r11w" | "r11d" | "r11" => "r11",
+        "r12b" | "r12l" | "r12w" | "r12d" | "r12" => "r12",
+        "r13b" | "r13l" | "r13w" | "r13d" | "r13" => "r13",
+        "r14b" | "r14l" | "r14w" | "r14d" | "r14" => "r14",
+        "r15b" | "r15l" | "r15w" | "r15d" | "r15" => "r15",
         _ => lower.as_str(),
     }
     .to_string()
@@ -426,6 +685,7 @@ mod ir_lifting_tests {
                 address,
                 op: op.to_string(),
                 operands,
+                display_text: None,
             }),
             near_branch_target: None,
         })

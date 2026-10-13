@@ -1,6 +1,6 @@
 //! String extraction from binary data
 
-use std::collections::HashSet;
+use std::collections::BTreeMap;
 
 /// String information
 #[derive(Debug, Clone)]
@@ -22,6 +22,40 @@ pub enum StringEncoding {
     Utf16Le,
     /// UTF-16 BE
     Utf16Be,
+}
+
+/// Select one deterministic interpretation for address-based references and
+/// C symbols while the report retains every extracted encoding occurrence.
+pub fn canonical_strings_by_address(strings: &[StringInfo]) -> BTreeMap<u64, &StringInfo> {
+    let mut by_address: BTreeMap<u64, &StringInfo> = BTreeMap::new();
+    for string in strings {
+        by_address
+            .entry(string.address)
+            .and_modify(|current| {
+                if (
+                    encoding_preference(string.encoding),
+                    &string.value,
+                    string.length,
+                ) < (
+                    encoding_preference(current.encoding),
+                    &current.value,
+                    current.length,
+                ) {
+                    *current = string;
+                }
+            })
+            .or_insert(string);
+    }
+    by_address
+}
+
+fn encoding_preference(encoding: StringEncoding) -> u8 {
+    match encoding {
+        StringEncoding::Ascii => 0,
+        StringEncoding::Utf8 => 1,
+        StringEncoding::Utf16Le => 2,
+        StringEncoding::Utf16Be => 3,
+    }
 }
 
 /// String extractor
@@ -67,6 +101,21 @@ impl StringExtractor {
         self.extract_with_limit(data, base_address, usize::MAX)
     }
 
+    /// Return at most `limit` occurrences and whether additional occurrences
+    /// were omitted. Scanning stops after a single overflow occurrence, so
+    /// temporary result growth is bounded by `limit + 1`.
+    pub fn extract_bounded(
+        &self,
+        data: &[u8],
+        base_address: u64,
+        limit: usize,
+    ) -> (Vec<StringInfo>, bool) {
+        let mut strings = self.extract_with_limit(data, base_address, limit.saturating_add(1));
+        let truncated = strings.len() > limit;
+        strings.truncate(limit);
+        (strings, truncated)
+    }
+
     /// Extract at most `limit` strings, stopping the scan as soon as the
     /// allowance is exhausted.
     pub fn extract_with_limit(
@@ -80,14 +129,12 @@ impl StringExtractor {
         }
 
         let mut strings = Vec::new();
-        let mut seen = HashSet::new();
-
         // Extract ASCII/UTF-8 strings
-        self.extract_ascii_utf8(data, base_address, limit, &mut strings, &mut seen);
+        self.extract_ascii_utf8(data, base_address, limit, &mut strings);
 
         // Extract UTF-16 strings
         if strings.len() < limit {
-            self.extract_utf16(data, base_address, limit, &mut strings, &mut seen);
+            self.extract_utf16(data, base_address, limit, &mut strings);
         }
 
         strings
@@ -100,110 +147,177 @@ impl StringExtractor {
         base_address: u64,
         limit: usize,
         strings: &mut Vec<StringInfo>,
-        seen: &mut HashSet<String>,
     ) {
         let mut start = None;
-        let mut current = Vec::new();
-
-        for (i, &byte) in data.iter().enumerate() {
-            if (0x20..=0x7E).contains(&byte) {
-                // Printable ASCII
-                if start.is_none() {
-                    start = Some(i);
-                }
-                current.push(byte);
-            } else if byte == 0 {
-                // Null terminator
+        let mut current = String::new();
+        let mut character_count = 0usize;
+        let mut i = 0;
+        while i < data.len() {
+            if data[i] == 0 {
                 if let Some(s) = start {
-                    if current.len() >= self.min_length && current.len() <= self.max_length {
-                        if let Ok(value) = String::from_utf8(current.clone()) {
-                            if !seen.contains(&value) {
-                                seen.insert(value.clone());
-                                strings.push(StringInfo {
-                                    address: base_address + s as u64,
-                                    value,
-                                    encoding: StringEncoding::Ascii,
-                                    length: current.len(),
-                                });
-                                if strings.len() == limit {
-                                    return;
-                                }
-                            }
-                        }
+                    self.push_string(
+                        s,
+                        base_address,
+                        &current,
+                        character_count,
+                        if current.is_ascii() {
+                            StringEncoding::Ascii
+                        } else {
+                            StringEncoding::Utf8
+                        },
+                        strings,
+                    );
+                    if strings.len() == limit {
+                        return;
                     }
                 }
                 start = None;
                 current.clear();
+                character_count = 0;
+                i += 1;
+                continue;
+            }
+
+            let width = match data[i] {
+                0x20..=0x7E => 1,
+                0xC2..=0xDF => 2,
+                0xE0..=0xEF => 3,
+                0xF0..=0xF4 => 4,
+                _ => 0,
+            };
+            let character = data
+                .get(i..i.saturating_add(width))
+                .filter(|_| width != 0)
+                .and_then(|bytes| std::str::from_utf8(bytes).ok())
+                .and_then(|text| text.chars().next())
+                .filter(|ch| !ch.is_control());
+            if let Some(character) = character {
+                start.get_or_insert(i);
+                character_count = character_count.saturating_add(1);
+                // Continue scanning overlong candidates without accumulating bytes.
+                if character_count <= self.max_length {
+                    current.push(character);
+                }
+                i += width;
             } else {
-                // Non-printable, non-null
                 start = None;
                 current.clear();
+                character_count = 0;
+                i += 1;
             }
         }
     }
 
-    /// Extract UTF-16 strings
+    /// Extract UTF-16 strings at either alignment. Latin-1 code units and
+    /// valid surrogate pairs provide endian evidence; arbitrary printable
+    /// BMP pairs alone are ambiguous with ordinary byte strings.
     fn extract_utf16(
         &self,
         data: &[u8],
         base_address: u64,
         limit: usize,
         strings: &mut Vec<StringInfo>,
-        seen: &mut HashSet<String>,
     ) {
-        if data.len() < 2 {
-            return;
-        }
-
-        let mut start = None;
-        let mut current = Vec::new();
-
-        for i in (0..data.len() - 1).step_by(2) {
-            let byte1 = data[i];
-            let byte2 = data[i + 1];
-
-            // Check for UTF-16 LE printable characters
-            let code_point = u16::from_le_bytes([byte1, byte2]);
-
-            if (0x20..=0x7E).contains(&code_point) {
-                if start.is_none() {
-                    start = Some(i);
-                }
-                current.push(byte1);
-                current.push(byte2);
-            } else if code_point == 0 {
-                // Null terminator
-                if let Some(s) = start {
-                    if current.len() >= self.min_length * 2 && current.len() <= self.max_length * 2
-                    {
-                        if let Ok(value) = String::from_utf16(
-                            &current
-                                .chunks(2)
-                                .map(|c| u16::from_le_bytes([c[0], c[1]]))
-                                .collect::<Vec<_>>(),
-                        ) {
-                            if !seen.contains(&value) {
-                                seen.insert(value.clone());
-                                strings.push(StringInfo {
-                                    address: base_address + s as u64,
-                                    value,
-                                    encoding: StringEncoding::Utf16Le,
-                                    length: current.len() / 2,
-                                });
-                                if strings.len() == limit {
-                                    return;
-                                }
+        for encoding in [StringEncoding::Utf16Le, StringEncoding::Utf16Be] {
+            for alignment in 0..2 {
+                let mut start = None;
+                let mut current = String::new();
+                let mut character_count = 0usize;
+                let mut encoding_evidence = 0usize;
+                let mut i = alignment;
+                while i + 1 < data.len() {
+                    let unit = utf16_unit(data, i, encoding);
+                    if unit == 0 {
+                        if let Some(s) =
+                            start.filter(|_| encoding_evidence >= character_count.div_ceil(2))
+                        {
+                            self.push_string(
+                                s,
+                                base_address,
+                                &current,
+                                character_count,
+                                encoding,
+                                strings,
+                            );
+                            if strings.len() == limit {
+                                return;
                             }
                         }
+                        start = None;
+                        current.clear();
+                        character_count = 0;
+                        encoding_evidence = 0;
+                        i += 2;
+                        continue;
+                    }
+                    let (character, width) = if (0xD800..=0xDBFF).contains(&unit)
+                        && i + 3 < data.len()
+                    {
+                        let low = utf16_unit(data, i + 2, encoding);
+                        let character = if (0xDC00..=0xDFFF).contains(&low) {
+                            char::from_u32(
+                                0x10000 + (((unit as u32 - 0xD800) << 10) | (low as u32 - 0xDC00)),
+                            )
+                        } else {
+                            None
+                        };
+                        (character, 4)
+                    } else {
+                        (char::from_u32(unit as u32), 2)
+                    };
+                    if let Some(character) = character.filter(|ch| !ch.is_control()) {
+                        start.get_or_insert(i);
+                        character_count = character_count.saturating_add(1);
+                        if unit <= 0xFF || width == 4 {
+                            encoding_evidence = encoding_evidence.saturating_add(1);
+                        }
+                        if character_count <= self.max_length {
+                            current.push(character);
+                        }
+                        i += width;
+                    } else {
+                        start = None;
+                        current.clear();
+                        character_count = 0;
+                        encoding_evidence = 0;
+                        i += 2;
                     }
                 }
-                start = None;
-                current.clear();
-            } else {
-                start = None;
-                current.clear();
             }
         }
+    }
+
+    fn push_string(
+        &self,
+        offset: usize,
+        base_address: u64,
+        value: &str,
+        length: usize,
+        encoding: StringEncoding,
+        strings: &mut Vec<StringInfo>,
+    ) {
+        if length < self.min_length || length > self.max_length {
+            return;
+        }
+        let Some(address) = base_address.checked_add(offset as u64) else {
+            return;
+        };
+        let value = value.to_string();
+        strings.push(StringInfo {
+            address,
+            value,
+            encoding,
+            length,
+        });
+    }
+}
+
+fn utf16_unit(data: &[u8], offset: usize, encoding: StringEncoding) -> u16 {
+    let bytes = [data[offset], data[offset + 1]];
+    if encoding == StringEncoding::Utf16Le {
+        u16::from_le_bytes(bytes)
+    } else {
+        u16::from_be_bytes(bytes)
     }
 }
 
@@ -245,12 +359,12 @@ mod tests {
     }
 
     #[test]
-    fn deduplicates_repeated_strings() {
+    fn preserves_repeated_string_locations() {
         let data = b"test\x00test\x00test\x00";
         let strings = StringExtractor::new().extract(data, 0);
 
         let test_count = strings.iter().filter(|s| s.value == "test").count();
-        assert_eq!(test_count, 1, "duplicate strings must be collapsed");
+        assert_eq!(test_count, 3, "each string address must be preserved");
     }
 
     #[test]

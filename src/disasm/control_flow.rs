@@ -261,24 +261,7 @@ impl ControlFlowGraph {
     fn extract_target(&self, instr: &Instruction) -> Option<u64> {
         match instr {
             Instruction::X86(x86_instr) => x86_instr.near_branch_target,
-            Instruction::Arm(arm_instr) => {
-                // capstone exposes target via detail operands; until we thread
-                // detail info through, fall back to parsing the immediate string.
-                self.parse_immediate(&arm_instr.operands)
-            }
-        }
-    }
-
-    /// Parse immediate value from operand string
-    fn parse_immediate(&self, operands: &str) -> Option<u64> {
-        // Look for hex addresses like 0x1234 or 0h1234
-        let re = regex::Regex::new(r"0[xX]([0-9A-Fa-f]+)|0h([0-9A-Fa-f]+)").ok()?;
-        if let Some(caps) = re.captures(operands) {
-            let hex = caps.get(1).or_else(|| caps.get(2))?.as_str();
-            u64::from_str_radix(hex, 16).ok()
-        } else {
-            // Try to parse decimal
-            operands.trim().parse().ok()
+            Instruction::Arm(arm_instr) => arm_instr.near_branch_target,
         }
     }
 

@@ -89,6 +89,7 @@ impl CGenerator {
         let indent = " ".repeat(self.indent_level * self.config.indent_size);
 
         match stmt {
+            Statement::Instruction { statement, .. } => self.generate_statement(statement),
             Statement::Expression(expr) => {
                 format!("{}{};", indent, self.generate_expression(expr))
             }

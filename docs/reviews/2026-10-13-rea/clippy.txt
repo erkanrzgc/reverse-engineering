@@ -1,0 +1,8 @@
+    Checking crossbeam-epoch v0.9.20
+    Checking anyhow v1.0.104
+    Checking reverse-engineering v0.2.0 (C:\Users\erkanrzgc\Desktop\reverse-engineering)
+    Checking crossbeam-deque v0.8.6
+    Checking rayon-core v1.13.0
+    Checking rayon v1.12.0
+    Checking criterion v0.5.1
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.58s

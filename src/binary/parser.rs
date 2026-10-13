@@ -82,6 +82,12 @@ pub trait BinaryInfo {
     /// Get the architecture
     fn architecture(&self) -> &'static str;
 
+    /// Explain instruction modes for which the production decoder cannot
+    /// safely interpret this binary. The architecture label remains intact.
+    fn unsupported_disassembly_reason(&self) -> Option<&'static str> {
+        None
+    }
+
     /// Get entry point address
     fn entry_point(&self) -> u64;
 

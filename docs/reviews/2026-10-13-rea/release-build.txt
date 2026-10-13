@@ -1,0 +1,3 @@
+   Compiling anyhow v1.0.104
+   Compiling reverse-engineering v0.2.0 (C:\Users\erkanrzgc\Desktop\reverse-engineering)
+    Finished `release` profile [optimized] target(s) in 10.66s

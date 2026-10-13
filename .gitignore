@@ -4,3 +4,4 @@ fuzz/target/
 .claude/
 HANDOFF.txt
 docs/superpowers/
+docs/reviews/**/fixture/

@@ -28,6 +28,7 @@ impl BinaryParser for PeParser {
 /// PE binary information (owned — no borrow from parse input)
 pub struct PeBinary {
     architecture: &'static str,
+    unsupported_disassembly_reason: Option<&'static str>,
     entry_point: u64,
     sections: Vec<SectionInfo>,
     imports: Vec<ImportInfo>,
@@ -47,6 +48,11 @@ impl PeBinary {
         };
 
         let entry_point = pe.entry as u64;
+        let unsupported_disassembly_reason = matches!(
+            pe.header.coff_header.machine,
+            goblin::pe::header::COFF_MACHINE_ARMNT | goblin::pe::header::COFF_MACHINE_THUMB
+        )
+        .then_some("PE ARMNT/Thumb instruction mode is unsupported by the configured A32 decoder");
 
         let sections: Vec<SectionInfo> = pe
             .sections
@@ -155,6 +161,7 @@ impl PeBinary {
 
         Self {
             architecture,
+            unsupported_disassembly_reason,
             entry_point,
             sections,
             imports,
@@ -172,6 +179,10 @@ impl BinaryInfo for PeBinary {
 
     fn architecture(&self) -> &'static str {
         self.architecture
+    }
+
+    fn unsupported_disassembly_reason(&self) -> Option<&'static str> {
+        self.unsupported_disassembly_reason
     }
 
     fn entry_point(&self) -> u64 {

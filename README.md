@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/rust-1.87+-blue?style=flat-square&logo=rust" alt="rust">
   <img src="https://img.shields.io/badge/crates-12+-purple?style=flat-square" alt="crates">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
-  <img src="https://img.shields.io/badge/tests-250%20passing-orange?style=flat-square" alt="tests">
+  <img src="https://img.shields.io/badge/tests-real%20byte%20regressions-orange?style=flat-square" alt="tests">
   <img src="https://img.shields.io/github/last-commit/erkanrzgc/reverse-engineering?style=flat-square" alt="last commit">
 </p>
 
@@ -23,7 +23,7 @@ compiler version required by the standard-library APIs used by the project.
   classifies imported APIs into behavior categories, resolves PE import-address table calls, builds XREF indexes,
   builds control-flow graphs, detects functions, seeds tail-call targets, flags thunk and jump-table candidates,
   inventories PE data directories, recovers simple stack variables and calling-convention parameters,
-  annotates string references, and generates syntax-safe readable C code or machine-readable JSON.
+  annotates string references, and generates readable approximate C code or machine-readable JSON.
 </p>
 
 ---
@@ -69,7 +69,7 @@ compiler version required by the standard-library APIs used by the project.
 | **C Syntax Hardening** | Escapes strings/comments and sanitizes emitted identifiers |
 | **Optimization** | Constant folding, dead-code elimination |
 | **C Generation** | Address-annotated C output with direct x86/x64 and import-aware call recovery |
-| **CLI Modes** | Supports C output, full report packages, `--json`, `--only-report`, and `--quiet` |
+| **CLI Modes** | `analyze INPUT`, `--format c|json`, `--only-report`, package directories, and resource ceilings |
 
 ---
 
@@ -111,25 +111,25 @@ cargo build --release
 
 ```bash
 # Decompile a binary
-cargo run --release --bin reverse-engineering -- -i <binary> -o output.c
+cargo run --release --bin reverse-engineering -- analyze <binary> -o output.c
 
 # With optimization
-cargo run --release --bin reverse-engineering -- -i <binary> -o output.c --optimization basic
+cargo run --release --bin reverse-engineering -- analyze <binary> -o output.c --optimization basic
 
 # Aggressive optimization
-cargo run --release --bin reverse-engineering -- -i <binary> -o output.c --optimization aggressive
+cargo run --release --bin reverse-engineering -- analyze <binary> -o output.c --optimization aggressive
 
 # Extract runtime-specific artifacts
-cargo run --release --bin reverse-engineering -- -i <binary> --extract-runtime-artifacts --artifacts-dir artifacts
+cargo run --release --bin reverse-engineering -- analyze <binary> --artifacts-dir artifacts
 
 # Produce a complete reverse-engineering report package
-cargo run --release --bin reverse-engineering -- -i <binary> --report-dir out
+cargo run --release --bin reverse-engineering -- analyze <binary> --report-dir out
 
 # Print machine-readable analysis JSON
-cargo run --release --bin reverse-engineering -- -i <binary> --json --quiet
+cargo run --release --bin reverse-engineering -- analyze <binary> --format json --quiet
 
 # Build reports without generated C
-cargo run --release --bin reverse-engineering -- -i <binary> --report-dir out --only-report --quiet
+cargo run --release --bin reverse-engineering -- analyze <binary> --report-dir out --only-report --quiet
 ```
 
 Runtime artifact extraction writes `runtime_report.txt`, `artifacts_manifest.json`,
@@ -157,7 +157,7 @@ indicators, not a malware verdict.
 
 **Windows smoke test:**
 ```bash
-cargo run --release --bin reverse-engineering -- -i C:\Windows\System32\notepad.exe -o notepad.c
+cargo run --release --bin reverse-engineering -- analyze C:\Windows\System32\notepad.exe -o notepad.c
 # → 672 functions · 48,053 instructions · 52,000+ lines of C
 ```
 
@@ -191,42 +191,23 @@ cargo test --lib            # unit tests only
 cargo test --test binary_fixtures   # integration: format parsers
 ```
 
-Current suite: **239 unit + 11 integration tests** (250 total).
+The suite includes real decoded-byte regressions, parser/CFG checks, bounded extraction tests, and generated-C compilation/execution checks when GCC is available. Run the commands below for the current results.
 
-| Module | Tests |
-|---|---|
-| `disasm::x86` | 5 |
-| `disasm::arm` | 10 |
-| `disasm::control_flow` | 6 |
-| `disasm::ir` | 8 |
-| `binary::parser` | 5 |
-| `binary::pe` | 1 |
-| `analysis::cyberchef` | 4 |
-| `analysis::functions` | 8 |
-| `analysis::patterns` | 7 |
-| `analysis::report` | 14 |
-| `analysis::runtime` | 10 |
-| `analysis::runtime_artifacts` | 5 |
-| `analysis::runtime_report` | 4 |
-| `analysis::strings` | 7 |
-| `analysis::types` | 16 |
-| `decompiler::ast` | 6 |
-| `decompiler::c_generator` | 17 |
-| `decompiler::c_syntax` | 12 |
-| `decompiler::lifter` | 10 |
-| `decompiler::optimization` | 19 |
-| `decompiler::signatures` | 16 |
-| `decompiler::string_refs` | 6 |
-| `decompiler::structure` (IR helpers) | 22 |
-| `decompiler::structure_tests` (CFG end-to-end) | 18 |
-| `utils::error` | 3 |
-| `tests/binary_fixtures.rs` (ELF · PE · Mach-O) | 7 |
-| `tests/golden_decompile.rs` | 3 |
-| `tests/package_identity.rs` | 1 |
+```bash
+cargo test --locked --test decompiler_semantics
+cargo test --locked --test binary_regressions
+cargo test --locked --test analysis_regressions
+cargo test --locked --test output_regressions
+node --test scripts/rea-compare.test.mjs
+```
 
 **Integration fixtures** under `tests/fixtures/binary/` are vendored from the
 [`goblin`](https://github.com/m4b/goblin) crate (MIT, m4b) — see
 `tests/fixtures/binary/ATTRIBUTION.md` for licensing.
+
+The optional [REA/Ghidra validation lane](docs/REA_VALIDATION.md) compares a
+repository-owned native PE fixture, generated C and independent native outcomes,
+with saved provider evidence and explicit deadlines/partial results.
 
 ---
 

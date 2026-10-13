@@ -10,6 +10,9 @@ pub struct InstructionIR {
     pub address: u64,
     pub op: String,
     pub operands: Vec<Operand>,
+    /// Original decoder rendering, including prefixes, for evidence and
+    /// fallback assembly. Synthetic instructions may leave this absent.
+    pub display_text: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +81,7 @@ mod tests {
             address: 0x1000,
             op: "mov".into(),
             operands: vec![Operand::Reg("rax".into()), Operand::Imm(42)],
+            display_text: None,
         };
         assert_eq!(ir.address, 0x1000);
         assert_eq!(ir.op, "mov");

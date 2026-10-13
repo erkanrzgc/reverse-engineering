@@ -273,14 +273,22 @@ fn elf_and_pe_results_obey_v1_contract_and_are_byte_deterministic() {
             addresses.windows(2).all(|w| w[0] <= w[1]),
             "{name}: function addresses not sorted"
         );
-        let names: Vec<&str> = functions
+        // Real symbol names need not be lexical in address order. Keep the
+        // stable address/name key above and preserve recovered export names.
+        for function in functions
             .iter()
-            .filter_map(|f| f["name"].as_str())
-            .collect();
-        assert!(
-            names.windows(2).all(|w| w[0] <= w[1]),
-            "{name}: function names not sorted"
-        );
+            .filter(|function| function["is_export"] == true)
+        {
+            assert!(
+                report["exports"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|export| export["address"] == function["address"]
+                        && export["name"] == function["name"]),
+                "{name}: exported function name was lost"
+            );
+        }
     }
 }
 

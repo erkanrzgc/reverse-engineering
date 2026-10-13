@@ -5,8 +5,9 @@ use crate::binary::parser::{
 };
 use crate::binary::{BinaryFormat, BinaryParser};
 use crate::utils::error::{Error, Result};
-use goblin::elf::section_header::{SHF_ALLOC, SHF_EXECINSTR, SHF_WRITE};
+use goblin::elf::section_header::{SHF_ALLOC, SHF_EXECINSTR, SHF_WRITE, SHT_NOBITS, SHT_NULL};
 use goblin::elf::Elf;
+use std::collections::BTreeSet;
 
 /// ELF parser
 #[derive(Default)]
@@ -28,6 +29,7 @@ impl BinaryParser for ElfParser {
 /// ELF binary information (owned)
 pub struct ElfBinary {
     architecture: &'static str,
+    unsupported_disassembly_reason: Option<&'static str>,
     entry_point: u64,
     sections: Vec<SectionInfo>,
     imports: Vec<ImportInfo>,
@@ -45,6 +47,27 @@ impl ElfBinary {
         };
 
         let entry_point = elf.header.e_entry;
+        let unsupported_disassembly_reason = if matches!(architecture, "ARM" | "ARM64")
+            && !elf.little_endian
+        {
+            Some("Big-endian ARM instruction mode is unsupported by the configured decoder")
+        } else if architecture == "ARM"
+            && (entry_point & 1 != 0
+                || elf.syms.iter().any(|symbol| {
+                    (symbol.st_type() == goblin::elf::sym::STT_FUNC && symbol.st_value & 1 != 0)
+                        || elf
+                            .strtab
+                            .get_at(symbol.st_name)
+                            .is_some_and(|name| name == "$t" || name.starts_with("$t."))
+                })
+                || elf.dynsyms.iter().any(|symbol| {
+                    symbol.st_type() == goblin::elf::sym::STT_FUNC && symbol.st_value & 1 != 0
+                }))
+        {
+            Some("Thumb or mixed ARM/Thumb instruction mode is unsupported by the configured A32 decoder")
+        } else {
+            None
+        };
 
         // sh_flags is u64 in goblin's unified ELF view; constants are u32.
         let shf_alloc = u64::from(SHF_ALLOC);
@@ -62,13 +85,14 @@ impl ElfBinary {
                     .to_string();
                 let virtual_address = section.sh_addr;
                 let size = section.sh_size;
-                let raw_data = if section.sh_offset > 0 && section.sh_size > 0 {
-                    let start = section.sh_offset as usize;
-                    let end = start.saturating_add(size as usize);
-                    data.get(start..end).unwrap_or(&[]).to_vec()
-                } else {
-                    vec![]
-                };
+                let raw_data =
+                    if !matches!(section.sh_type, SHT_NOBITS | SHT_NULL) && section.sh_size > 0 {
+                        let start = section.sh_offset as usize;
+                        let end = start.saturating_add(size as usize);
+                        data.get(start..end).unwrap_or(&[]).to_vec()
+                    } else {
+                        vec![]
+                    };
 
                 let characteristics = SectionCharacteristics {
                     is_code: section.sh_flags & shf_exec != 0,
@@ -97,22 +121,36 @@ impl ElfBinary {
             })
             .collect();
 
-        let exports = elf
-            .syms
-            .iter()
-            .filter(|sym| sym.st_bind() == goblin::elf::sym::STB_GLOBAL && sym.st_size > 0)
-            .filter_map(|sym| {
-                let name = elf.strtab.get_at(sym.st_name)?.to_string();
-                Some(ExportInfo {
-                    name,
-                    address: sym.st_value,
-                    ordinal: None,
-                })
-            })
-            .collect();
+        // Stripping .symtab must not erase definitions retained in .dynsym.
+        // A defined symbol can legitimately have zero size (e.g. _init).
+        let mut seen = BTreeSet::new();
+        let mut exports = Vec::new();
+        for (symbols, names) in [(&elf.syms, &elf.strtab), (&elf.dynsyms, &elf.dynstrtab)] {
+            for symbol in symbols.iter() {
+                if !matches!(
+                    symbol.st_bind(),
+                    goblin::elf::sym::STB_GLOBAL | goblin::elf::sym::STB_WEAK
+                ) || symbol.st_shndx == goblin::elf::section_header::SHN_UNDEF as usize
+                {
+                    continue;
+                }
+                let Some(name) = names.get_at(symbol.st_name).filter(|name| !name.is_empty())
+                else {
+                    continue;
+                };
+                if seen.insert((symbol.st_value, name.to_string())) {
+                    exports.push(ExportInfo {
+                        name: name.to_string(),
+                        address: symbol.st_value,
+                        ordinal: None,
+                    });
+                }
+            }
+        }
 
         Self {
             architecture,
+            unsupported_disassembly_reason,
             entry_point,
             sections,
             imports,
@@ -128,6 +166,10 @@ impl BinaryInfo for ElfBinary {
 
     fn architecture(&self) -> &'static str {
         self.architecture
+    }
+
+    fn unsupported_disassembly_reason(&self) -> Option<&'static str> {
+        self.unsupported_disassembly_reason
     }
 
     fn entry_point(&self) -> u64 {

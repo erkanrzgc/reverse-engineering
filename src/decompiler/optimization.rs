@@ -47,6 +47,7 @@ impl Optimizer {
     /// Optimize a statement
     fn optimize_statement(&self, stmt: &mut Statement) {
         match stmt {
+            Statement::Instruction { statement, .. } => self.optimize_statement(statement),
             Statement::Expression(expr) => {
                 self.optimize_expression(expr);
             }

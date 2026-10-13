@@ -42,6 +42,14 @@ pub fn write_outputs(
         if let Some(report) = &result.report {
             atomic_json(&dir.join("analysis_package.json"), report)?;
             write_report_components(dir, report)?;
+            atomic_write(
+                &dir.join("report.txt"),
+                render_report(result, report).as_bytes(),
+            )?;
+            atomic_write(
+                &dir.join("behavior_report.txt"),
+                render_behavior(report).as_bytes(),
+            )?;
         }
         if let Some(c) = &result.generated_c {
             atomic_write(&dir.join("decompiled.c"), c.as_bytes())?;
@@ -52,6 +60,22 @@ pub fn write_outputs(
             .with_context(|| format!("failed to create artifacts directory {}", dir.display()))?;
         if let Some(artifacts) = &result.runtime_artifacts {
             atomic_json(&dir.join("artifacts_manifest.json"), artifacts)?;
+            let mut text = format!(
+                "Runtime artifacts: {}\nCaptured bytes: {}\nTruncated: {}\n",
+                artifacts.artifacts.len(),
+                artifacts.captured_bytes,
+                artifacts.truncated
+            );
+            for artifact in &artifacts.artifacts {
+                text.push_str(&format!(
+                    "\n{} ({:?}, {:?})\nSource: {}\n{}\n",
+                    artifact.name, artifact.kind, artifact.status, artifact.source, artifact.detail
+                ));
+            }
+            for note in &artifacts.notes {
+                text.push_str(&format!("\nNote: {note}\n"));
+            }
+            atomic_write(&dir.join("runtime_report.txt"), text.as_bytes())?;
             for artifact in &artifacts.artifacts {
                 if let Some(name) = &artifact.file_name {
                     atomic_write(&dir.join(name), &artifact.payload)?;
@@ -81,6 +105,7 @@ fn write_report_components(
     component!("jump_tables.json", &report.jump_tables);
     component!("call_graph.json", &report.call_graph);
     component!("xrefs.json", &report.xrefs);
+    component!("import_xrefs.json", &report.xrefs.imports);
     component!("sections.json", &report.sections);
     component!("cfg_summary.json", &report.cfg_summary);
     component!("strings.json", &report.strings);
@@ -92,7 +117,50 @@ fn write_report_components(
     component!("import_addresses.json", &report.import_addresses);
     component!("imports.json", &report.imports);
     component!("exports.json", &report.exports);
+    component!("pe_directories.json", &report.pe_data_directories);
     Ok(())
+}
+
+fn render_report(
+    result: &AnalysisResult,
+    report: &crate::analysis::AnalysisReportPackage,
+) -> String {
+    let summary = &report.summary;
+    let mut text = format!(
+        "Reverse-engineering analysis\nInput: {}\nStatus: {:?}\nFormat: {} / {}\nEntry: 0x{:X}\nInstructions: {}\nFunctions: {}\nString occurrences: {}\n\nGenerated C is an approximate reconstruction. Analysis completion does not establish semantic equivalence.\n",
+        summary.input_path, result.status, summary.format, summary.architecture,
+        summary.entry_point, summary.instruction_count, summary.function_count, summary.string_count,
+    );
+    for diagnostic in &result.diagnostics {
+        text.push_str(&format!("\nDiagnostic: {diagnostic}\n"));
+    }
+    for function in &report.functions {
+        text.push_str(&format!(
+            "\n0x{:X} {}: {} bytes, {} instructions, {} calls, {} tail calls\n",
+            function.address,
+            function.name,
+            function.size,
+            function.instruction_count,
+            function.calls.len(),
+            function.tail_calls.len()
+        ));
+    }
+    text
+}
+
+fn render_behavior(report: &crate::analysis::AnalysisReportPackage) -> String {
+    let behavior = &report.behavior_report;
+    let mut text = format!(
+        "Behavior triage\nRisk score: {} ({})\nIndicators require analyst interpretation.\n",
+        behavior.risk_score, behavior.risk_level
+    );
+    for finding in &behavior.findings {
+        text.push_str(&format!(
+            "\n[{} / {}] {}: {}\n",
+            finding.category, finding.severity, finding.source, finding.detail
+        ));
+    }
+    text
 }
 
 fn atomic_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<()> {

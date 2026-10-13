@@ -1,0 +1,45 @@
+Review date: 2026-10-10 (Europe/Istanbul)
+Checkout: e5070ab1f640f889c6b9f8553d78d280b5bc812b
+Package: reverse-engineering 0.2.0
+Platform: Windows x86_64-pc-windows-gnu
+Toolchain: cargo/rustc 1.95.0
+
+Fresh build target: %TEMP%\reverse-engineering-review-build-20261010
+
+cargo fmt -- --check: exit 0
+cargo clippy --locked --all-targets --all-features --target-dir <fresh-target> -- -D warnings: exit 0, no warnings
+cargo test --locked --all-features --quiet --target-dir <fresh-target>: exit 0, 244 unit + 32 integration = 276 passed
+cargo build --locked --release --target-dir <fresh-target>: exit 0
+cargo bench --locked --no-run --target-dir <fresh-target>: exit 0
+
+Initial cached integration-test failure used the old Desktop/deCompiler manifest directory.
+All suites passed when compiled from this checkout in the fresh target.
+
+Three external audit harnesses and the Mach-O harness were compiled against the
+fresh library artifact and run again by the root reviewer. Exit codes: 0.
+The malformed overlapping-section test intentionally triggered a caught internal
+panic; it returned AnalysisError/InternalFailure rather than an unhandled crash.
+
+GCC -std=c11 -fsyntax-only on the ELF fixture generated C: exit 0.
+GCC -std=c11 -fsyntax-only on the inferred-parameter example: exit 1,
+rcx redeclared as different kind of symbol.
+
+Compiled controlled generated C:
+conditional(0)=1 conditional(1)=1
+Instruction semantics expected: 0, 1.
+partial_register()=0x56
+Instruction semantics expected: 0x1256.
+
+README-style legacy CLI invocation: exit 2, unexpected argument -i.
+Fresh ELF/PE report packages omit report.txt, behavior_report.txt,
+import_xrefs.json, pe_directories.json, runtime_report.txt.
+
+Fresh debug analysis of C:\Windows\System32\notepad.exe: exit 0.
+Input bytes: 360448; code sections: 2; instructions: 48038;
+functions: 672; strings: 703; status: complete; diagnostics: empty.
+Single debug measurement including JSON output: 6.705 seconds.
+JSON bytes: 5541294. This is not a release benchmark or semantic validation.
+
+Not run: dependency advisory scan (cargo-audit unavailable), nightly fuzz campaign,
+Rust 1.87 build, Linux/macOS execution, Windows MSVC release build,
+large-scale memory exhaustion, actual packaged runtime corpus, remote CI/release.

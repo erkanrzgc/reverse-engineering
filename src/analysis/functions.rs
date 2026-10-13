@@ -2,6 +2,7 @@
 
 use crate::binary::parser::{ExportInfo, ImportInfo};
 use crate::disasm::control_flow::Instruction;
+use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
 
 /// Function information
@@ -78,7 +79,18 @@ impl FunctionDetector {
 
     /// Primary detection entry point.
     pub fn detect(&self, inputs: FunctionDetectionInputs<'_>) -> Vec<FunctionInfo> {
-        let instructions = inputs.instructions;
+        // Section streams can arrive out of address order and repeat an
+        // address. Normalize before indices are used as function boundaries.
+        let mut instructions = Cow::Borrowed(inputs.instructions);
+        if instructions
+            .windows(2)
+            .any(|pair| pair[0].address() >= pair[1].address())
+        {
+            let normalized = instructions.to_mut();
+            normalized.sort_by_key(Instruction::address);
+            normalized.dedup_by_key(|instruction| instruction.address());
+        }
+        let instructions = instructions.as_ref();
         if instructions.is_empty() {
             return Vec::new();
         }
@@ -113,8 +125,8 @@ impl FunctionDetector {
             }
         }
 
-        for instr in instructions {
-            if self.is_function_prologue(instr, inputs.architecture) {
+        for (index, instr) in instructions.iter().enumerate() {
+            if self.is_function_prologue(&instructions[index..], inputs.architecture) {
                 seeds.insert(instr.address());
             }
         }
@@ -180,12 +192,7 @@ impl FunctionDetector {
         })
     }
 
-    fn is_function_prologue(&self, instr: &Instruction, architecture: &str) -> bool {
-        let bytes = match instr {
-            Instruction::X86(x) => &x.bytes,
-            Instruction::Arm(a) => &a.bytes,
-        };
-
+    fn is_function_prologue(&self, instructions: &[Instruction], architecture: &str) -> bool {
         let prologues = match architecture {
             "x86" => &self.x86_prologues,
             "x64" => &self.x64_prologues,
@@ -194,7 +201,28 @@ impl FunctionDetector {
             _ => return false,
         };
 
-        prologues.iter().any(|p| bytes.starts_with(p))
+        let max_length = prologues.iter().map(Vec::len).max().unwrap_or(0);
+        let mut bytes = Vec::with_capacity(max_length);
+        let mut next_address = instructions[0].address();
+        for instruction in instructions {
+            if instruction.address() != next_address {
+                break;
+            }
+            let instruction_bytes = match instruction {
+                Instruction::X86(x86) => &x86.bytes,
+                Instruction::Arm(arm) => &arm.bytes,
+            };
+            bytes.extend(
+                instruction_bytes
+                    .iter()
+                    .take(max_length.saturating_sub(bytes.len())),
+            );
+            if bytes.len() >= max_length {
+                break;
+            }
+            next_address = next_address.saturating_add(instruction_len(instruction));
+        }
+        prologues.iter().any(|pattern| bytes.starts_with(pattern))
     }
 }
 
@@ -208,7 +236,7 @@ impl Default for FunctionDetector {
 fn branch_target(instr: &Instruction) -> Option<u64> {
     match instr {
         Instruction::X86(x) => x.near_branch_target,
-        Instruction::Arm(_) => None, // TODO: thread capstone detail for ARM
+        Instruction::Arm(arm) => arm.near_branch_target,
     }
 }
 

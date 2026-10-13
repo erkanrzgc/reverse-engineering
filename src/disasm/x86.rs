@@ -3,7 +3,8 @@
 use crate::disasm::ir::{InstructionIR, MemoryOperand, Operand};
 use crate::utils::{Error, Result};
 use iced_x86::{
-    Decoder, DecoderOptions, Formatter, Instruction as IcedInstruction, IntelFormatter,
+    Decoder, DecoderOptions, FormatMnemonicOptions, Formatter, Instruction as IcedInstruction,
+    IntelFormatter, OpKind,
 };
 
 /// x86/x64 disassembler
@@ -36,23 +37,22 @@ impl X86Disassembler {
 
         let mut instructions = Vec::new();
         let mut instr = IcedInstruction::default();
-        let mut formatted = String::new();
 
         while decoder.can_decode() {
             decoder.decode_out(&mut instr);
 
-            // Full "mnemonic operands" string
-            formatted.clear();
-            formatter.format(&instr, &mut formatted);
-
-            // Split on first whitespace for mnemonic / operand parts.
-            let (mnemonic, operands) = match formatted.find(char::is_whitespace) {
-                Some(idx) => (
-                    formatted[..idx].to_string(),
-                    formatted[idx..].trim_start().to_string(),
-                ),
-                None => (formatted.clone(), String::new()),
-            };
+            // Prefixes such as REP/BND are not opcodes. Keep the decoder's
+            // mnemonic separate from its operands rather than splitting text.
+            let mut mnemonic = String::new();
+            formatter.format_mnemonic_options(
+                &instr,
+                &mut mnemonic,
+                FormatMnemonicOptions::NO_PREFIXES,
+            );
+            let mut operands = String::new();
+            formatter.format_all_operands(&instr, &mut operands);
+            let mut display_text = String::new();
+            formatter.format(&instr, &mut display_text);
 
             // Recover instruction bytes from the source buffer using ip & len.
             let start = (instr.ip().saturating_sub(address)) as usize;
@@ -65,14 +65,15 @@ impl X86Disassembler {
                 mnemonic,
                 operands,
                 length: instr.len(),
-                ir: Some(decode_ir(&instr)),
-                // Structured branch target (0 if not a near branch)
-                near_branch_target: if instr.is_jmp_near()
-                    || instr.is_jmp_short()
-                    || instr.is_jcc_near()
-                    || instr.is_jcc_short()
-                    || instr.is_call_near()
-                {
+                ir: Some(decode_ir(&instr, display_text)),
+                // LOOP/JCXZ also carry near-branch operands; a mnemonic
+                // whitelist omitted these even though iced-x86 decoded them.
+                near_branch_target: if instr.op_kinds().any(|kind| {
+                    matches!(
+                        kind,
+                        OpKind::NearBranch16 | OpKind::NearBranch32 | OpKind::NearBranch64
+                    )
+                }) {
                     Some(instr.near_branch_target())
                 } else {
                     None
@@ -100,6 +101,9 @@ pub struct X86Instruction {
 
 impl std::fmt::Display for X86Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(text) = self.ir.as_ref().and_then(|ir| ir.display_text.as_deref()) {
+            return write!(f, "{text}");
+        }
         if self.operands.is_empty() {
             write!(f, "{}", self.mnemonic)
         } else {
@@ -111,21 +115,17 @@ impl std::fmt::Display for X86Instruction {
 impl X86Instruction {
     /// Check if this is a control flow instruction
     pub fn is_control_flow(&self) -> bool {
-        let mnemonic = self.mnemonic.to_lowercase();
-        mnemonic.starts_with('j')
-            || mnemonic == "call"
-            || mnemonic == "ret"
-            || mnemonic == "retn"
-            || mnemonic == "retf"
-            || mnemonic == "iret"
-            || mnemonic == "iretd"
-            || mnemonic == "iretq"
+        self.is_conditional_jump()
+            || self.is_unconditional_jump()
+            || self.is_call()
+            || self.is_return()
     }
 
     /// Check if this is a conditional jump
     pub fn is_conditional_jump(&self) -> bool {
         let mnemonic = self.mnemonic.to_lowercase();
-        mnemonic.starts_with('j') && mnemonic != "jmp"
+        (mnemonic.starts_with('j') && mnemonic != "jmp")
+            || matches!(mnemonic.as_str(), "loop" | "loope" | "loopne")
     }
 
     /// Check if this is an unconditional jump
@@ -148,7 +148,7 @@ impl X86Instruction {
     }
 }
 
-fn decode_ir(instr: &IcedInstruction) -> InstructionIR {
+fn decode_ir(instr: &IcedInstruction, display_text: String) -> InstructionIR {
     let op = format!("{:?}", instr.mnemonic()).to_ascii_lowercase();
     let mut operands = Vec::new();
     for idx in 0..instr.op_count() {
@@ -158,6 +158,7 @@ fn decode_ir(instr: &IcedInstruction) -> InstructionIR {
         address: instr.ip(),
         op,
         operands,
+        display_text: Some(display_text),
     }
 }
 

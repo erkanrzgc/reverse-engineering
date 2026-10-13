@@ -9,6 +9,31 @@ use std::collections::HashMap;
 const MAX_PYC_CANDIDATE_BYTES: usize = 1024 * 1024;
 const PYINSTALLER_COOKIE_MAGIC: &[u8] = b"MEI\x0C\x0B\x0A\x0B\x0E";
 
+/// Independent ceilings for metadata growth and captured payload bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeArtifactLimits {
+    pub max_artifacts: usize,
+    pub max_captured_bytes: usize,
+}
+
+impl Default for RuntimeArtifactLimits {
+    fn default() -> Self {
+        Self {
+            max_artifacts: 1024,
+            max_captured_bytes: 16 * 1024 * 1024,
+        }
+    }
+}
+
+/// A bounded extraction is incomplete when any of these ceilings is reached.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeArtifactTruncationReason {
+    ArtifactCountLimit,
+    CapturedBytesLimit,
+    CandidateBytesLimit,
+}
+
 /// Inputs for runtime-specific artifact extraction.
 pub struct RuntimeArtifactInputs<'a> {
     pub runtime_matches: &'a [RuntimeMatch],
@@ -23,6 +48,9 @@ pub struct RuntimeArtifactInputs<'a> {
 pub struct RuntimeArtifactResult {
     pub artifacts: Vec<RuntimeArtifact>,
     pub notes: Vec<String>,
+    pub captured_bytes: usize,
+    pub truncated: bool,
+    pub truncation_reasons: Vec<RuntimeArtifactTruncationReason>,
 }
 
 /// One extracted or inventoried runtime artifact.
@@ -37,6 +65,8 @@ pub struct RuntimeArtifact {
     pub size: usize,
     pub file_name: Option<String>,
     pub detail: String,
+    /// Candidate carving can end at a resource ceiling rather than a format boundary.
+    pub payload_truncated: bool,
     #[serde(skip_serializing)]
     pub payload: Vec<u8>,
 }
@@ -69,9 +99,20 @@ impl RuntimeArtifactExtractor {
     }
 
     pub fn extract(&self, inputs: RuntimeArtifactInputs<'_>) -> RuntimeArtifactResult {
+        self.extract_with_limits(inputs, RuntimeArtifactLimits::default())
+    }
+
+    pub fn extract_with_limits(
+        &self,
+        inputs: RuntimeArtifactInputs<'_>,
+        limits: RuntimeArtifactLimits,
+    ) -> RuntimeArtifactResult {
         let mut result = RuntimeArtifactResult {
             artifacts: Vec::new(),
             notes: Vec::new(),
+            captured_bytes: 0,
+            truncated: false,
+            truncation_reasons: Vec::new(),
         };
 
         if inputs.runtime_matches.is_empty() {
@@ -84,6 +125,9 @@ impl RuntimeArtifactExtractor {
 
         let mut used_file_names = HashMap::new();
         for runtime in inputs.runtime_matches {
+            if !can_scan(limits, &mut result) {
+                break;
+            }
             match runtime.family {
                 RuntimeFamily::PythonPackaged | RuntimeFamily::PythonNative => {
                     extract_python_bytecode_candidates(
@@ -91,19 +135,32 @@ impl RuntimeArtifactExtractor {
                         &inputs,
                         &mut used_file_names,
                         &mut result,
+                        limits,
                     );
-                    inventory_pyinstaller_carchive_cookies(runtime, &inputs, &mut result);
-                    inventory_python_markers(runtime, &inputs, &mut result);
+                    if can_scan(limits, &mut result) {
+                        inventory_pyinstaller_carchive_cookies(
+                            runtime,
+                            &inputs,
+                            &mut result,
+                            limits,
+                        );
+                    }
+                    if can_scan(limits, &mut result) {
+                        inventory_python_markers(runtime, &inputs, &mut result, limits);
+                    }
                 }
                 RuntimeFamily::DartFlutter => {
-                    inventory_dart_flutter(runtime, &inputs, &mut result);
+                    inventory_dart_flutter(runtime, &inputs, &mut result, limits);
                 }
                 _ => {
-                    inventory_runtime_evidence(runtime, &mut result);
+                    inventory_runtime_evidence(runtime, &mut result, limits);
                 }
             }
         }
 
+        if result.truncated {
+            result.notes.push(format!("Runtime artifact extraction was truncated by {:?}; later candidates may not have been scanned.", result.truncation_reasons));
+        }
         result
     }
 }
@@ -118,6 +175,7 @@ fn inventory_python_markers(
     runtime: &RuntimeMatch,
     inputs: &RuntimeArtifactInputs<'_>,
     result: &mut RuntimeArtifactResult,
+    limits: RuntimeArtifactLimits,
 ) {
     let markers = [
         ("PYZ-00.pyz", "PyInstaller PYZ archive marker"),
@@ -128,6 +186,9 @@ fn inventory_python_markers(
     ];
 
     for (marker, detail) in markers {
+        if !can_scan(limits, result) {
+            return;
+        }
         if has_marker(inputs, marker) {
             result.artifacts.push(inventoried_artifact(
                 marker,
@@ -144,6 +205,9 @@ fn inventory_python_markers(
         .iter()
         .filter(|import| contains_case_insensitive(&import.name, "python"))
     {
+        if !can_scan(limits, result) {
+            return;
+        }
         result.artifacts.push(inventoried_artifact(
             &import.name,
             RuntimeArtifactKind::PythonMarker,
@@ -158,10 +222,23 @@ fn inventory_pyinstaller_carchive_cookies(
     runtime: &RuntimeMatch,
     inputs: &RuntimeArtifactInputs<'_>,
     result: &mut RuntimeArtifactResult,
+    limits: RuntimeArtifactLimits,
 ) {
     for section in inputs.sections {
-        for offset in find_pyinstaller_cookie_offsets(&section.raw_data) {
-            let virtual_address = section.virtual_address + offset as u64;
+        for (offset, window) in section
+            .raw_data
+            .windows(PYINSTALLER_COOKIE_MAGIC.len())
+            .enumerate()
+        {
+            if !can_scan(limits, result) {
+                return;
+            }
+            if window != PYINSTALLER_COOKIE_MAGIC {
+                continue;
+            }
+            let Some(virtual_address) = section.virtual_address.checked_add(offset as u64) else {
+                continue;
+            };
             result.artifacts.push(RuntimeArtifact {
                 name: format!("PyInstaller CArchive cookie at 0x{:X}", virtual_address),
                 kind: RuntimeArtifactKind::PyInstallerArchive,
@@ -172,6 +249,7 @@ fn inventory_pyinstaller_carchive_cookies(
                 size: PYINSTALLER_COOKIE_MAGIC.len(),
                 file_name: None,
                 detail: "PyInstaller CArchive cookie magic detected; future parsing can use this as the archive table anchor.".to_string(),
+                payload_truncated: false,
                 payload: Vec::new(),
             });
         }
@@ -182,10 +260,14 @@ fn inventory_dart_flutter(
     runtime: &RuntimeMatch,
     inputs: &RuntimeArtifactInputs<'_>,
     result: &mut RuntimeArtifactResult,
+    limits: RuntimeArtifactLimits,
 ) {
     let mut found = false;
 
     for section in inputs.sections {
+        if !can_scan(limits, result) {
+            return;
+        }
         if contains_case_insensitive(&section.name, "snapshot") {
             found = true;
             result.artifacts.push(RuntimeArtifact {
@@ -198,6 +280,7 @@ fn inventory_dart_flutter(
                 size: section.raw_data.len(),
                 file_name: None,
                 detail: "Dart/Flutter snapshot-related section inventory.".to_string(),
+                payload_truncated: false,
                 payload: Vec::new(),
             });
         }
@@ -216,6 +299,9 @@ fn inventory_dart_flutter(
     ];
 
     for (marker, detail) in markers {
+        if !can_scan(limits, result) {
+            return;
+        }
         if has_marker(inputs, marker) {
             found = true;
             result.artifacts.push(inventoried_artifact(
@@ -235,8 +321,15 @@ fn inventory_dart_flutter(
     }
 }
 
-fn inventory_runtime_evidence(runtime: &RuntimeMatch, result: &mut RuntimeArtifactResult) {
+fn inventory_runtime_evidence(
+    runtime: &RuntimeMatch,
+    result: &mut RuntimeArtifactResult,
+    limits: RuntimeArtifactLimits,
+) {
     for evidence in &runtime.evidence {
+        if !can_scan(limits, result) {
+            return;
+        }
         result.artifacts.push(inventoried_artifact(
             evidence,
             RuntimeArtifactKind::RuntimeEvidence,
@@ -252,20 +345,45 @@ fn extract_python_bytecode_candidates(
     inputs: &RuntimeArtifactInputs<'_>,
     used_file_names: &mut HashMap<String, usize>,
     result: &mut RuntimeArtifactResult,
+    limits: RuntimeArtifactLimits,
 ) {
     for section in inputs.sections {
         let mut offset = 0;
         while offset < section.raw_data.len() {
+            if !can_scan(limits, result) {
+                return;
+            }
             if !is_pyc_candidate_at(&section.raw_data, offset) {
                 offset += 1;
                 continue;
             }
 
-            let end = next_pyc_candidate_offset(&section.raw_data, offset + 1)
-                .unwrap_or(section.raw_data.len())
-                .min(offset + MAX_PYC_CANDIDATE_BYTES);
+            let remaining_bytes = limits
+                .max_captured_bytes
+                .saturating_sub(result.captured_bytes);
+            let candidate_limit = offset
+                .saturating_add(MAX_PYC_CANDIDATE_BYTES)
+                .min(section.raw_data.len());
+            let capture_limit = offset.saturating_add(remaining_bytes).min(candidate_limit);
+            let end = next_pyc_candidate_offset(&section.raw_data, offset + 1, capture_limit)
+                .unwrap_or(capture_limit);
+            let payload_truncated = end == capture_limit && end < section.raw_data.len();
+            if payload_truncated {
+                mark_truncated(
+                    result,
+                    if capture_limit < candidate_limit || remaining_bytes <= MAX_PYC_CANDIDATE_BYTES
+                    {
+                        RuntimeArtifactTruncationReason::CapturedBytesLimit
+                    } else {
+                        RuntimeArtifactTruncationReason::CandidateBytesLimit
+                    },
+                );
+            }
             let payload = section.raw_data[offset..end].to_vec();
-            let virtual_address = section.virtual_address + offset as u64;
+            let Some(virtual_address) = section.virtual_address.checked_add(offset as u64) else {
+                offset = end.max(offset + 1);
+                continue;
+            };
             let base_name = format!(
                 "python_bytecode_{}_0x{:X}",
                 sanitize_file_stem(&section.name),
@@ -273,6 +391,7 @@ fn extract_python_bytecode_candidates(
             );
             let file_name = unique_file_name(&base_name, "pyc", used_file_names);
 
+            result.captured_bytes += payload.len();
             result.artifacts.push(RuntimeArtifact {
                 name: format!("Python bytecode candidate at 0x{:X}", virtual_address),
                 kind: RuntimeArtifactKind::PythonBytecode,
@@ -282,7 +401,8 @@ fn extract_python_bytecode_candidates(
                 virtual_address: Some(virtual_address),
                 size: payload.len(),
                 file_name: Some(file_name),
-                detail: "CPython .pyc-like magic and marshal code marker detected.".to_string(),
+                detail: "CPython .pyc-like magic and marshal code marker detected; this is an unvalidated carving candidate, not a verified bytecode file.".to_string(),
+                payload_truncated,
                 payload,
             });
 
@@ -308,12 +428,33 @@ fn inventoried_artifact(
         size: 0,
         file_name: None,
         detail: detail.to_string(),
+        payload_truncated: false,
         payload: Vec::new(),
     }
 }
 
-fn next_pyc_candidate_offset(data: &[u8], start: usize) -> Option<usize> {
-    (start..data.len()).find(|offset| is_pyc_candidate_at(data, *offset))
+fn next_pyc_candidate_offset(data: &[u8], start: usize, end: usize) -> Option<usize> {
+    (start..end).find(|offset| is_pyc_candidate_at(data, *offset))
+}
+
+fn can_scan(limits: RuntimeArtifactLimits, result: &mut RuntimeArtifactResult) -> bool {
+    let mut allowed = true;
+    if result.artifacts.len() >= limits.max_artifacts {
+        mark_truncated(result, RuntimeArtifactTruncationReason::ArtifactCountLimit);
+        allowed = false;
+    }
+    if result.captured_bytes >= limits.max_captured_bytes {
+        mark_truncated(result, RuntimeArtifactTruncationReason::CapturedBytesLimit);
+        allowed = false;
+    }
+    allowed
+}
+
+fn mark_truncated(result: &mut RuntimeArtifactResult, reason: RuntimeArtifactTruncationReason) {
+    result.truncated = true;
+    if !result.truncation_reasons.contains(&reason) {
+        result.truncation_reasons.push(reason);
+    }
 }
 
 fn is_pyc_candidate_at(data: &[u8], offset: usize) -> bool {
@@ -370,23 +511,6 @@ fn has_marker(inputs: &RuntimeArtifactInputs<'_>, needle: &str) -> bool {
             .exports
             .iter()
             .any(|export| contains_case_insensitive(&export.name, needle))
-}
-
-fn find_pyinstaller_cookie_offsets(data: &[u8]) -> Vec<usize> {
-    if data.len() < PYINSTALLER_COOKIE_MAGIC.len() {
-        return Vec::new();
-    }
-
-    data.windows(PYINSTALLER_COOKIE_MAGIC.len())
-        .enumerate()
-        .filter_map(|(offset, window)| {
-            if window == PYINSTALLER_COOKIE_MAGIC {
-                Some(offset)
-            } else {
-                None
-            }
-        })
-        .collect()
 }
 
 fn contains_case_insensitive(haystack: &str, needle: &str) -> bool {

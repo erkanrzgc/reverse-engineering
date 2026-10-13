@@ -20,7 +20,7 @@ pub use lifter::{
 };
 pub use optimization::{OptimizationLevel, Optimizer};
 pub use signatures::recover_function_signatures;
-pub use string_refs::annotate_string_references;
+pub use string_refs::{annotate_string_references, annotate_string_references_with_instructions};
 pub use structure::{
     structure_function, structure_function_with_cfg, structure_functions,
     structure_functions_with_cfg,

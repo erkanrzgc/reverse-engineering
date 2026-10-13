@@ -3,9 +3,13 @@
 use crate::analysis::cyberchef::{cyberchef_recipe_reports, CyberChefRecipeReport};
 use crate::analysis::functions::FunctionInfo;
 use crate::analysis::runtime::RuntimeMatch;
-use crate::analysis::strings::StringInfo;
-use crate::binary::parser::{ExportInfo, ImportAddressInfo, ImportInfo, SectionInfo};
+use crate::analysis::strings::{canonical_strings_by_address, StringInfo};
+use crate::binary::parser::{
+    ExportInfo, ImportAddressInfo, ImportInfo, PeDataDirectoryInfo, SectionInfo,
+};
 use crate::disasm::control_flow::Instruction;
+use crate::disasm::ir::Operand;
+use crate::disasm::X86Instruction;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -45,6 +49,35 @@ pub struct AnalysisReportPackage {
     pub import_addresses: Vec<ImportAddressReport>,
     pub imports: Vec<ImportReport>,
     pub exports: Vec<ExportReport>,
+    pub pe_data_directories: Vec<PeDataDirectoryReport>,
+}
+
+/// PE directory metadata preserved from the parser without invented addresses.
+#[derive(Debug, Clone, Serialize)]
+pub struct PeDataDirectoryReport {
+    pub name: String,
+    pub virtual_address: u64,
+    pub size: u64,
+    pub section: Option<String>,
+}
+
+impl AnalysisReportPackage {
+    /// Attach parser metadata while keeping the report-builder input contract stable.
+    pub fn with_pe_data_directories(mut self, directories: &[PeDataDirectoryInfo]) -> Self {
+        self.pe_data_directories = directories
+            .iter()
+            .map(|directory| PeDataDirectoryReport {
+                name: directory.name.clone(),
+                virtual_address: directory.virtual_address,
+                size: directory.size,
+                section: directory.section.clone(),
+            })
+            .collect();
+        self.pe_data_directories.sort_by(|left, right| {
+            (left.virtual_address, &left.name).cmp(&(right.virtual_address, &right.name))
+        });
+        self
+    }
 }
 
 /// Human-scale counts and binary identity.
@@ -115,6 +148,8 @@ pub struct CallGraphEdge {
     pub caller_address: u64,
     pub callee_address: u64,
     pub callee_name: Option<String>,
+    /// Call or tail transfer; graph counts are grouped by this kind.
+    pub transfer_kind: String,
     pub call_count: usize,
     pub call_sites: Vec<u64>,
 }
@@ -142,6 +177,7 @@ pub struct CallReference {
     pub target_kind: String,
     pub target_library: Option<String>,
     pub target_symbol: Option<String>,
+    pub transfer_kind: String,
 }
 
 /// String reference found inside a function.
@@ -203,6 +239,7 @@ pub struct CallerReference {
     pub caller_name: String,
     pub caller_address: u64,
     pub instruction_address: u64,
+    pub transfer_kind: String,
 }
 
 /// Import-table cross-reference entry.
@@ -222,6 +259,7 @@ pub struct ImportCallerReference {
     pub function_name: String,
     pub function_address: u64,
     pub instruction_address: u64,
+    pub transfer_kind: String,
 }
 
 /// High-signal imported API classification.
@@ -296,11 +334,7 @@ impl AnalysisReportBuilder {
     pub fn build(&self, inputs: AnalysisReportInputs<'_>) -> AnalysisReportPackage {
         let function_names = build_function_name_map(inputs.functions);
         let string_reports = inputs.strings.iter().map(string_report).collect::<Vec<_>>();
-        let string_map = inputs
-            .strings
-            .iter()
-            .map(|string| (string.address, string))
-            .collect::<HashMap<_, _>>();
+        let string_map = canonical_strings_by_address(inputs.strings);
         let import_address_map = build_import_address_map(inputs.import_addresses);
 
         let functions = inputs
@@ -388,6 +422,7 @@ impl AnalysisReportBuilder {
                     ordinal: export.ordinal,
                 })
                 .collect(),
+            pe_data_directories: Vec::new(),
         }
     }
 }
@@ -399,17 +434,22 @@ impl Default for AnalysisReportBuilder {
 }
 
 fn call_graph_edges(functions: &[FunctionReport]) -> Vec<CallGraphEdge> {
-    let mut edges: HashMap<(u64, u64), CallGraphEdge> = HashMap::new();
+    let mut edges: HashMap<(u64, u64, String), CallGraphEdge> = HashMap::new();
 
     for function in functions {
-        for call in &function.calls {
+        for call in function.calls.iter().chain(&function.tail_calls) {
             let edge = edges
-                .entry((function.address, call.target_address))
+                .entry((
+                    function.address,
+                    call.target_address,
+                    call.transfer_kind.clone(),
+                ))
                 .or_insert_with(|| CallGraphEdge {
                     caller_name: function.name.clone(),
                     caller_address: function.address,
                     callee_address: call.target_address,
                     callee_name: call.target_name.clone(),
+                    transfer_kind: call.transfer_kind.clone(),
                     call_count: 0,
                     call_sites: Vec::new(),
                 });
@@ -419,7 +459,18 @@ fn call_graph_edges(functions: &[FunctionReport]) -> Vec<CallGraphEdge> {
     }
 
     let mut edges = edges.into_values().collect::<Vec<_>>();
-    edges.sort_by_key(|edge| (edge.caller_address, edge.callee_address));
+    edges.sort_by(|left, right| {
+        (
+            left.caller_address,
+            left.callee_address,
+            &left.transfer_kind,
+        )
+            .cmp(&(
+                right.caller_address,
+                right.callee_address,
+                &right.transfer_kind,
+            ))
+    });
     edges
 }
 
@@ -451,7 +502,7 @@ fn xref_report(
     let mut called_by: HashMap<u64, Vec<CallerReference>> = HashMap::new();
 
     for function in functions {
-        for call in &function.calls {
+        for call in function.calls.iter().chain(&function.tail_calls) {
             called_by
                 .entry(call.target_address)
                 .or_default()
@@ -459,6 +510,7 @@ fn xref_report(
                     caller_name: function.name.clone(),
                     caller_address: function.address,
                     instruction_address: call.instruction_address,
+                    transfer_kind: call.transfer_kind.clone(),
                 });
         }
     }
@@ -472,7 +524,16 @@ fn xref_report(
             FunctionXrefReport {
                 function_name: function.name.clone(),
                 function_address: function.address,
-                calls_out: function.calls.clone(),
+                calls_out: {
+                    let mut references = function
+                        .calls
+                        .iter()
+                        .chain(&function.tail_calls)
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    references.sort_by_key(|call| (call.instruction_address, call.target_address));
+                    references
+                },
                 called_by: callers,
                 strings: function.string_refs.clone(),
             }
@@ -556,7 +617,7 @@ fn import_callers(
     let mut callers: HashMap<(String, String), Vec<ImportCallerReference>> = HashMap::new();
 
     for function in functions {
-        for call in &function.calls {
+        for call in function.calls.iter().chain(&function.tail_calls) {
             let (Some(library), Some(symbol)) = (&call.target_library, &call.target_symbol) else {
                 continue;
             };
@@ -567,6 +628,7 @@ fn import_callers(
                     function_name: function.name.clone(),
                     function_address: function.address,
                     instruction_address: call.instruction_address,
+                    transfer_kind: call.transfer_kind.clone(),
                 });
         }
     }
@@ -770,7 +832,7 @@ fn build_function_name_map(functions: &[FunctionInfo]) -> HashMap<u64, String> {
 fn function_report(
     function: &FunctionInfo,
     function_names: &HashMap<u64, String>,
-    strings: &HashMap<u64, &StringInfo>,
+    strings: &BTreeMap<u64, &StringInfo>,
     import_addresses: &HashMap<u64, &ImportAddressInfo>,
 ) -> FunctionReport {
     let tail_calls = tail_call_references(function, function_names, import_addresses);
@@ -780,7 +842,7 @@ fn function_report(
         size: function.size,
         instruction_count: function.instructions.len(),
         basic_block_estimate: basic_block_estimate(function),
-        function_kind: function_kind(function),
+        function_kind: function_kind(function, !tail_calls.is_empty()),
         is_import: function.is_import,
         is_export: function.is_export,
         calls: call_references(function, function_names, import_addresses),
@@ -855,6 +917,7 @@ fn call_references(
                     target_kind: "import".to_string(),
                     target_library: Some(import.library.clone()),
                     target_symbol: Some(import.function.clone()),
+                    transfer_kind: "call".to_string(),
                 });
             }
 
@@ -865,6 +928,7 @@ fn call_references(
                 target_kind: "function".to_string(),
                 target_library: None,
                 target_symbol: None,
+                transfer_kind: "call".to_string(),
             })
         })
         .collect()
@@ -882,12 +946,27 @@ fn tail_call_references(
         .filter_map(|instruction| {
             let target =
                 branch_target(instruction).or_else(|| import_branch_target(instruction))?;
-            Some(reference_for_target(
+            // Internal branches (including back edges) are never tail calls.
+            let end = function.address.saturating_add(function.size as u64);
+            if (target >= function.address && target < end)
+                || target == function.address
+                || function
+                    .instructions
+                    .iter()
+                    .any(|item| item.address() == target)
+                || (!function_names.contains_key(&target)
+                    && !import_addresses.contains_key(&target))
+            {
+                return None;
+            }
+            let mut reference = reference_for_target(
                 instruction.address(),
                 target,
                 function_names,
                 import_addresses,
-            ))
+            );
+            reference.transfer_kind = "tail_call".to_string();
+            Some(reference)
         })
         .collect()
 }
@@ -906,6 +985,7 @@ fn reference_for_target(
             target_kind: "import".to_string(),
             target_library: Some(import.library.clone()),
             target_symbol: Some(import.function.clone()),
+            transfer_kind: "call".to_string(),
         };
     }
 
@@ -916,11 +996,13 @@ fn reference_for_target(
         target_kind: "function".to_string(),
         target_library: None,
         target_symbol: None,
+        transfer_kind: "call".to_string(),
     }
 }
 
-fn function_kind(function: &FunctionInfo) -> String {
-    if function.instructions.len() == 1
+fn function_kind(function: &FunctionInfo, has_tail_calls: bool) -> String {
+    if has_tail_calls
+        && function.instructions.len() == 1
         && function
             .instructions
             .first()
@@ -975,7 +1057,7 @@ fn looks_like_jump_table_expression(operands: &str) -> bool {
 
 fn string_references(
     function: &FunctionInfo,
-    strings: &HashMap<u64, &StringInfo>,
+    strings: &BTreeMap<u64, &StringInfo>,
 ) -> Vec<StringReference> {
     let mut refs = Vec::new();
     let mut seen = BTreeSet::new();
@@ -1003,18 +1085,16 @@ fn string_references(
 fn call_target(instruction: &Instruction) -> Option<u64> {
     match instruction {
         Instruction::X86(instruction) if instruction.is_call() => instruction.near_branch_target,
-        Instruction::Arm(_) if instruction.is_call() => None,
+        Instruction::Arm(instruction) if instruction.is_call() => instruction.near_branch_target,
         _ => None,
     }
 }
 
 fn import_call_target(instruction: &Instruction) -> Option<u64> {
     match instruction {
-        Instruction::X86(instruction) if instruction.is_call() => referenced_memory_address(
-            instruction.address,
-            instruction.length,
-            &instruction.operands,
-        ),
+        Instruction::X86(instruction) if instruction.is_call() => {
+            referenced_memory_address(instruction)
+        }
         _ => None,
     }
 }
@@ -1023,6 +1103,11 @@ fn branch_target(instruction: &Instruction) -> Option<u64> {
     match instruction {
         Instruction::X86(instruction)
             if instruction.is_call() || instruction.is_unconditional_jump() =>
+        {
+            instruction.near_branch_target
+        }
+        Instruction::Arm(instruction)
+            if instruction.is_call() || instruction.is_unconditional_branch() =>
         {
             instruction.near_branch_target
         }
@@ -1035,34 +1120,71 @@ fn import_branch_target(instruction: &Instruction) -> Option<u64> {
         Instruction::X86(instruction)
             if instruction.is_call() || instruction.is_unconditional_jump() =>
         {
-            referenced_memory_address(
-                instruction.address,
-                instruction.length,
-                &instruction.operands,
-            )
+            referenced_memory_address(instruction)
         }
         _ => None,
     }
 }
 
-fn referenced_memory_address(address: u64, length: usize, operands: &str) -> Option<u64> {
-    if !operands.contains('[') || !operands.contains(']') {
-        return None;
+fn referenced_memory_address(instruction: &X86Instruction) -> Option<u64> {
+    if let Some(ir) = &instruction.ir {
+        return ir.operands.iter().find_map(|operand| {
+            let Operand::Mem(memory) = operand else {
+                return None;
+            };
+            if memory.index.is_some() {
+                return None;
+            }
+            match memory.base.as_deref() {
+                // iced-x86 provides the absolute effective address for RIP/EIP.
+                None | Some("rip" | "eip") => Some(memory.disp as u64),
+                _ => None,
+            }
+        });
     }
-
-    let lower = operands.to_ascii_lowercase();
-    let first_hex = collect_hex_addresses(operands).into_iter().next()?;
-
-    if lower.contains("rip+") || lower.contains("rip +") {
-        Some(address.wrapping_add(length as u64).wrapping_add(first_hex))
-    } else if lower.contains("rip-") || lower.contains("rip -") {
-        Some(address.wrapping_add(length as u64).wrapping_sub(first_hex))
+    // Legacy hand-authored instructions lack IR. Only accept a complete
+    // absolute literal or RIP displacement, never a register/index expression.
+    let expression = instruction.operands.split_once('[')?.1.split_once(']')?.0;
+    let expression = expression
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    if let Some(displacement) = expression.strip_prefix("rip+") {
+        instruction
+            .address
+            .checked_add(instruction.length as u64)?
+            .checked_add(parse_hex_token(displacement)?)
+    } else if let Some(displacement) = expression.strip_prefix("rip-") {
+        instruction
+            .address
+            .checked_add(instruction.length as u64)?
+            .checked_sub(parse_hex_token(displacement)?)
     } else {
-        Some(first_hex)
+        parse_hex_token(&expression)
     }
 }
 
 fn referenced_addresses(instruction: &Instruction) -> Vec<u64> {
+    if let Instruction::X86(instruction) = instruction {
+        if let Some(ir) = &instruction.ir {
+            let mut addresses = ir
+                .operands
+                .iter()
+                .filter_map(|operand| {
+                    if let Operand::Imm(value) = operand {
+                        Some(*value as u64)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            if let Some(address) = referenced_memory_address(instruction) {
+                addresses.push(address);
+            }
+            return addresses;
+        }
+    }
     let text = match instruction {
         Instruction::X86(instruction) => {
             if instruction.operands.is_empty() {
@@ -1309,7 +1431,17 @@ fn classify_api(function: &str) -> Option<(&'static str, &'static str, &'static 
             "cryptprotectdata",
             "cryptdecrypt",
             "cryptencrypt",
-            "bcrypt",
+            "bcryptencrypt",
+            "bcryptdecrypt",
+            "bcryptgenrandom",
+            "bcryptopenalgorithmprovider",
+            "bcryptcreatehash",
+            "bcrypthashdata",
+            "bcryptfinishhash",
+            "bcryptgeneratesymmetrickey",
+            "bcryptgeneratekeypair",
+            "bcryptimportkey",
+            "bcryptexportkey",
             "openssl",
         ],
     ) {

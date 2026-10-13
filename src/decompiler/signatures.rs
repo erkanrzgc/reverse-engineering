@@ -16,6 +16,13 @@ pub fn recover_function_signatures(
         if function.parameters.is_empty() {
             function.parameters = infer_parameters(info, format, architecture);
         }
+        // Structuring runs before signature inference in the engine. Its
+        // provisional register declarations must not shadow inferred parameters.
+        function.body.retain(|statement| {
+            !matches!(statement,
+            Statement::VariableDeclaration { name, init: None, .. }
+                if function.parameters.iter().any(|parameter| &parameter.name == name))
+        });
         recover_rax_return(function);
     }
 }
@@ -45,8 +52,13 @@ fn infer_parameters(info: &FunctionInfo, format: &str, architecture: &str) -> Ve
         }
 
         if writes_destination(&mnemonic) {
-            if let Some(dest) = dest.and_then(register_in_operand) {
-                written.insert(dest);
+            if let Some(dest) = dest.filter(|dest| !dest.contains('[')) {
+                // Byte/word writes preserve the incoming upper register bits.
+                if crate::decompiler::lifter::register_width(dest).is_some_and(|bits| bits >= 32) {
+                    if let Some(dest) = register_in_operand(dest) {
+                        written.insert(dest);
+                    }
+                }
             }
         }
     }
@@ -89,20 +101,45 @@ fn split_operands(operands: &str) -> Vec<&str> {
 
 fn read_registers(mnemonic: &str, operands: &[&str]) -> Vec<String> {
     if mnemonic == "xor" && operands.len() == 2 && operands[0].eq_ignore_ascii_case(operands[1]) {
-        return Vec::new();
+        return if crate::decompiler::lifter::register_width(operands[0])
+            .is_some_and(|bits| bits < 32)
+        {
+            register_in_operand(operands[0]).into_iter().collect()
+        } else {
+            Vec::new()
+        };
     }
 
     let read_operands: &[&str] = match mnemonic {
         "mov" | "movzx" | "movsxd" | "lea" if operands.len() >= 2 => &operands[1..],
+        "imul" if operands.len() == 3 => &operands[1..],
         "cmp" | "test" => operands,
         "add" | "sub" | "and" | "or" | "xor" | "imul" => operands,
         _ => operands,
     };
 
-    read_operands
+    let mut registers: Vec<String> = read_operands
         .iter()
-        .filter_map(|operand| register_in_operand(operand))
-        .collect()
+        .flat_map(|operand| {
+            operand
+                .split(|ch: char| !ch.is_ascii_alphanumeric())
+                .filter_map(canonical_register)
+        })
+        .collect();
+    if let Some(destination) = operands.first() {
+        if destination.contains('[') {
+            registers.extend(
+                destination
+                    .split(|ch: char| !ch.is_ascii_alphanumeric())
+                    .filter_map(canonical_register),
+            );
+        } else if writes_destination(mnemonic)
+            && crate::decompiler::lifter::register_width(destination).is_some_and(|bits| bits < 32)
+        {
+            registers.extend(register_in_operand(destination));
+        }
+    }
+    registers
 }
 
 fn writes_destination(mnemonic: &str) -> bool {
@@ -142,15 +179,43 @@ fn canonical_register(value: &str) -> Option<String> {
 }
 
 fn recover_rax_return(function: &mut Function) {
-    for idx in 1..function.body.len() {
-        if !matches!(function.body[idx], Statement::Return(None)) {
-            continue;
-        }
-        if previous_statement_assigns_rax(&function.body[idx - 1]) {
-            function.return_type = TypeInfo::U64;
-            function.body[idx] = Statement::Return(Some(Expression::Variable("rax".to_string())));
+    if recover_rax_returns_in_body(&mut function.body) {
+        function.return_type = TypeInfo::U64;
+    }
+}
+
+fn recover_rax_returns_in_body(body: &mut [Statement]) -> bool {
+    let mut recovered = false;
+    for statement in body.iter_mut() {
+        match statement {
+            Statement::If {
+                then_block,
+                else_block,
+                ..
+            } => {
+                recovered |= recover_rax_returns_in_body(then_block);
+                if let Some(else_block) = else_block {
+                    recovered |= recover_rax_returns_in_body(else_block);
+                }
+            }
+            Statement::Block(body)
+            | Statement::While { body, .. }
+            | Statement::For { body, .. } => {
+                recovered |= recover_rax_returns_in_body(body);
+            }
+            _ => {}
         }
     }
+    for idx in 1..body.len() {
+        if !matches!(body[idx], Statement::Return(None)) {
+            continue;
+        }
+        if previous_statement_assigns_rax(&body[idx - 1]) {
+            body[idx] = Statement::Return(Some(Expression::Variable("rax".to_string())));
+            recovered = true;
+        }
+    }
+    recovered
 }
 
 fn previous_statement_assigns_rax(statement: &Statement) -> bool {

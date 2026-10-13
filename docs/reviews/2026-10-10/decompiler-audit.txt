@@ -1,0 +1,171 @@
+=== parameter decoded ===
+1000: mov eax,ecx Some(InstructionIR { address: 4096, op: "mov", operands: [Reg("eax"), Reg("ecx")] })
+1002: ret Some(InstructionIR { address: 4098, op: "ret", operands: [] })
+=== parameter output ===
+uint64_t parameter(uint64_t rcx) {
+    uint64_t rax;
+    uint64_t rcx;
+    rax = rcx;
+    return rax;
+}
+
+SUMMARY parameter: ifs=0 returns=1
+=== parameter aggressive ===
+uint64_t parameter(uint64_t rcx) {
+    uint64_t rax;
+    uint64_t rcx;
+    rax = rcx;
+    return rax;
+}
+
+=== conditional decoded ===
+1000: cmp ecx,0 Some(InstructionIR { address: 4096, op: "cmp", operands: [Reg("ecx"), Imm(0)] })
+1003: je short 000000000000100Bh Some(InstructionIR { address: 4099, op: "je", operands: [Other("nearbranch64")] })
+1005: mov eax,1 Some(InstructionIR { address: 4101, op: "mov", operands: [Reg("eax"), Imm(1)] })
+100A: ret Some(InstructionIR { address: 4106, op: "ret", operands: [] })
+100B: xor eax,eax Some(InstructionIR { address: 4107, op: "xor", operands: [Reg("eax"), Reg("eax")] })
+100D: ret Some(InstructionIR { address: 4109, op: "ret", operands: [] })
+=== conditional output ===
+uint64_t conditional(uint64_t rcx) {
+    uint64_t rax;
+    /* 0x1000: cmp ecx,0 */
+    /* 0x1003: je short 000000000000100Bh */
+    rax = 1;
+    return rax;
+    rax = (rax ^ rax);
+    return rax;
+}
+
+SUMMARY conditional: ifs=0 returns=2
+=== conditional aggressive ===
+uint64_t conditional(uint64_t rcx) {
+    uint64_t rax;
+    /* 0x1000: cmp ecx,0 */
+    /* 0x1003: je short 000000000000100Bh */
+    rax = 1;
+    return rax;
+}
+
+=== lea_stack decoded ===
+1000: lea rax,[rbp-8] Some(InstructionIR { address: 4096, op: "lea", operands: [Reg("rax"), Mem(MemoryOperand { base: Some("rbp"), index: None, scale: 1, disp: -8, size_bytes: None })] })
+1004: ret Some(InstructionIR { address: 4100, op: "ret", operands: [] })
+=== lea_stack output ===
+uint64_t lea_stack(void) {
+    uint64_t local_8;
+    uint64_t rax;
+    rax = (rax + local_8);
+    return rax;
+}
+
+SUMMARY lea_stack: ifs=0 returns=1
+=== lea_stack aggressive ===
+uint64_t lea_stack(void) {
+    uint64_t local_8;
+    uint64_t rax;
+    rax = (rax + local_8);
+    return rax;
+}
+
+=== partial_register decoded ===
+1000: mov rax,1234h Some(InstructionIR { address: 4096, op: "mov", operands: [Reg("rax"), Imm(4660)] })
+1007: mov al,56h Some(InstructionIR { address: 4103, op: "mov", operands: [Reg("al"), Imm(86)] })
+1009: ret Some(InstructionIR { address: 4105, op: "ret", operands: [] })
+=== partial_register output ===
+uint64_t partial_register(void) {
+    uint64_t rax;
+    rax = 4660;
+    rax = 86;
+    return rax;
+}
+
+SUMMARY partial_register: ifs=0 returns=1
+=== partial_register aggressive ===
+uint64_t partial_register(void) {
+    uint64_t rax;
+    rax = 4660;
+    rax = 86;
+    return rax;
+}
+
+=== imul_three decoded ===
+1000: imul eax,ecx,7 Some(InstructionIR { address: 4096, op: "imul", operands: [Reg("eax"), Reg("ecx"), Imm(7)] })
+1003: ret Some(InstructionIR { address: 4099, op: "ret", operands: [] })
+=== imul_three output ===
+uint64_t imul_three(uint64_t rcx) {
+    uint64_t rax;
+    uint64_t rcx;
+    rax = (rax * rcx);
+    return rax;
+}
+
+SUMMARY imul_three: ifs=0 returns=1
+=== imul_three aggressive ===
+uint64_t imul_three(uint64_t rcx) {
+    uint64_t rax;
+    uint64_t rcx;
+    rax = (rax * rcx);
+    return rax;
+}
+
+=== indexed_stack decoded ===
+1000: mov rax,[rbp+rcx*8-8] Some(InstructionIR { address: 4096, op: "mov", operands: [Reg("rax"), Mem(MemoryOperand { base: Some("rbp"), index: Some("rcx"), scale: 8, disp: -8, size_bytes: Some(8) })] })
+1005: ret Some(InstructionIR { address: 4101, op: "ret", operands: [] })
+=== indexed_stack output ===
+uint64_t indexed_stack(void) {
+    uint64_t local_8;
+    uint64_t rax;
+    rax = local_8;
+    return rax;
+}
+
+SUMMARY indexed_stack: ifs=0 returns=1
+=== indexed_stack aggressive ===
+uint64_t indexed_stack(void) {
+    uint64_t local_8;
+    uint64_t rax;
+    rax = local_8;
+    return rax;
+}
+
+=== movzx_partial decoded ===
+1000: mov rax,1234h Some(InstructionIR { address: 4096, op: "mov", operands: [Reg("rax"), Imm(4660)] })
+1007: movzx eax,al Some(InstructionIR { address: 4103, op: "movzx", operands: [Reg("eax"), Reg("al")] })
+100A: ret Some(InstructionIR { address: 4106, op: "ret", operands: [] })
+=== movzx_partial output ===
+uint64_t movzx_partial(void) {
+    uint64_t rax;
+    rax = 4660;
+    rax = rax;
+    return rax;
+}
+
+SUMMARY movzx_partial: ifs=0 returns=1
+=== movzx_partial aggressive ===
+uint64_t movzx_partial(void) {
+    uint64_t rax;
+    rax = 4660;
+    rax = rax;
+    return rax;
+}
+
+=== narrow_overflow decoded ===
+1000: mov eax,7FFFFFFFh Some(InstructionIR { address: 4096, op: "mov", operands: [Reg("eax"), Imm(2147483647)] })
+1005: add eax,1 Some(InstructionIR { address: 4101, op: "add", operands: [Reg("eax"), Imm(1)] })
+1008: ret Some(InstructionIR { address: 4104, op: "ret", operands: [] })
+=== narrow_overflow output ===
+uint64_t narrow_overflow(void) {
+    uint64_t rax;
+    rax = 2147483647;
+    rax = (rax + 1);
+    return rax;
+}
+
+SUMMARY narrow_overflow: ifs=0 returns=1
+=== narrow_overflow aggressive ===
+uint64_t narrow_overflow(void) {
+    uint64_t rax;
+    rax = 2147483647;
+    rax = (rax + 1);
+    return rax;
+}
+

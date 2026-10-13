@@ -1,6 +1,7 @@
 //! Stable library boundary for the production analysis pipeline.
 
 use crate::analysis::functions::FunctionDetectionInputs;
+use crate::analysis::runtime_artifacts::RuntimeArtifactLimits;
 use crate::analysis::{
     AnalysisReportBuilder, AnalysisReportInputs, AnalysisReportPackage, FunctionDetector,
     RuntimeArtifactExtractor, RuntimeArtifactInputs, RuntimeArtifactResult, RuntimeDetectionInputs,
@@ -8,7 +9,7 @@ use crate::analysis::{
 };
 use crate::binary::{parse_binary_bytes, BinaryFormat};
 use crate::decompiler::{
-    annotate_string_references, escape_c_string, import_function_declarations,
+    annotate_string_references_with_instructions, escape_c_string, import_function_declarations,
     lift_functions_with_imports, recover_function_signatures, sanitize_c_identifier,
     sanitize_c_line_comment, structure_functions_with_cfg, CGenerator, CGeneratorConfig, Function,
     OptimizationLevel, Optimizer,
@@ -65,6 +66,7 @@ pub enum DiagnosticCode {
     UnsupportedArchitecture,
     DisassemblyFailed,
     StringLimitExceeded,
+    ArtifactLimitExceeded,
     InternalFailure,
 }
 
@@ -206,6 +208,8 @@ impl Default for OutputSelection {
 pub struct ResourceLimits {
     pub max_input_bytes: u64,
     pub max_extracted_strings: usize,
+    pub max_runtime_artifacts: usize,
+    pub max_runtime_artifact_bytes: usize,
 }
 
 impl Default for ResourceLimits {
@@ -213,6 +217,8 @@ impl Default for ResourceLimits {
         Self {
             max_input_bytes: 512 * 1024 * 1024,
             max_extracted_strings: 100_000,
+            max_runtime_artifacts: 1024,
+            max_runtime_artifact_bytes: 16 * 1024 * 1024,
         }
     }
 }
@@ -370,6 +376,32 @@ impl AnalysisEngine {
         }
 
         let architecture = binary.architecture();
+        if let Some(reason) = binary.unsupported_disassembly_reason() {
+            return Err(AnalysisError::fatal(
+                DiagnosticStage::Disassembly,
+                DiagnosticCode::UnsupportedArchitecture,
+                reason,
+            ));
+        }
+        for pair in code_sections.windows(2) {
+            let end = pair[0]
+                .virtual_address
+                .checked_add(pair[0].raw_data.len() as u64)
+                .ok_or_else(|| {
+                    AnalysisError::fatal(
+                        DiagnosticStage::Disassembly,
+                        DiagnosticCode::DisassemblyFailed,
+                        "executable section address range overflows",
+                    )
+                })?;
+            if end > pair[1].virtual_address {
+                return Err(AnalysisError::fatal(
+                    DiagnosticStage::Disassembly,
+                    DiagnosticCode::DisassemblyFailed,
+                    format!("overlapping executable sections {} and {} have ambiguous instruction addresses", pair[0].name, pair[1].name),
+                ));
+            }
+        }
         let mut instructions = Vec::new();
         for section in &code_sections {
             let section_instructions =
@@ -400,7 +432,9 @@ impl AnalysisEngine {
             ));
         }
 
-        let exports = binary.exports();
+        let mut exports = binary.exports();
+        exports
+            .sort_by(|left, right| (left.address, &left.name).cmp(&(right.address, &right.name)));
         let imports = binary.imports();
         let import_addresses = binary.import_addresses();
         let functions = FunctionDetector::new().detect(FunctionDetectionInputs {
@@ -462,33 +496,43 @@ impl AnalysisEngine {
                     "report selection did not initialize a control-flow graph",
                 ));
             };
-            Some(AnalysisReportBuilder::new().build(AnalysisReportInputs {
-                input_path: &input_path,
-                format: binary.format().name(),
-                architecture,
-                entry_point: binary.entry_point(),
-                instruction_count: instructions.len(),
-                basic_block_count: cfg.blocks().len(),
-                sections: &sections,
-                functions: &functions,
-                strings: &strings,
-                imports: &imports,
-                import_addresses: &import_addresses,
-                exports: &exports,
-                runtime_matches: &runtime_matches,
-            }))
+            Some(
+                AnalysisReportBuilder::new()
+                    .build(AnalysisReportInputs {
+                        input_path: &input_path,
+                        format: binary.format().name(),
+                        architecture,
+                        entry_point: binary.entry_point(),
+                        instruction_count: instructions.len(),
+                        basic_block_count: cfg.blocks().len(),
+                        sections: &sections,
+                        functions: &functions,
+                        strings: &strings,
+                        imports: &imports,
+                        import_addresses: &import_addresses,
+                        exports: &exports,
+                        runtime_matches: &runtime_matches,
+                    })
+                    .with_pe_data_directories(&binary.pe_data_directories()),
+            )
         } else {
             None
         };
 
         let runtime_artifacts = config.outputs.runtime_artifacts.then(|| {
-            let mut result = RuntimeArtifactExtractor::new().extract(RuntimeArtifactInputs {
-                runtime_matches: &runtime_matches,
-                sections: &sections,
-                imports: &imports,
-                exports: &exports,
-                strings: &strings,
-            });
+            let mut result = RuntimeArtifactExtractor::new().extract_with_limits(
+                RuntimeArtifactInputs {
+                    runtime_matches: &runtime_matches,
+                    sections: &sections,
+                    imports: &imports,
+                    exports: &exports,
+                    strings: &strings,
+                },
+                RuntimeArtifactLimits {
+                    max_artifacts: config.limits.max_runtime_artifacts,
+                    max_captured_bytes: config.limits.max_runtime_artifact_bytes,
+                },
+            );
             result.artifacts.sort_by(|left, right| {
                 left.virtual_address
                     .cmp(&right.virtual_address)
@@ -497,6 +541,17 @@ impl AnalysisEngine {
             });
             result
         });
+        if runtime_artifacts
+            .as_ref()
+            .is_some_and(|result| result.truncated)
+        {
+            diagnostics.push(AnalysisDiagnostic {
+                stage: DiagnosticStage::RuntimeArtifacts,
+                severity: DiagnosticSeverity::Warning,
+                code: DiagnosticCode::ArtifactLimitExceeded,
+                message: "runtime artifact extraction reached a configured count, captured-byte, or candidate-byte limit; inspect the manifest truncation reasons".to_string(),
+            });
+        }
 
         let generated_c = if config.outputs.generated_c {
             let (Some(cfg), Some(runtime_reports)) = (cfg.as_ref(), runtime_reports.as_deref())
@@ -593,13 +648,8 @@ fn extract_strings(
         .filter(|section| section.characteristics.is_data)
     {
         let remaining = limit.saturating_sub(strings.len());
-        if remaining == 0 {
-            limit_hit = true;
-            break;
-        }
-        let extracted =
-            extractor.extract_with_limit(&section.raw_data, section.virtual_address, remaining);
-        let allowance_exhausted = extracted.len() == remaining;
+        let (extracted, allowance_exhausted) =
+            extractor.extract_bounded(&section.raw_data, section.virtual_address, remaining);
         strings.extend(extracted);
         if allowance_exhausted {
             limit_hit = true;
@@ -687,7 +737,9 @@ fn generate_c(inputs: GenerationInputs<'_>) -> String {
     output.push_str("#include <stddef.h>\n\n");
     if !inputs.strings.is_empty() {
         output.push_str("// String literals\n");
-        for string in inputs.strings {
+        for string in
+            crate::analysis::strings::canonical_strings_by_address(inputs.strings).values()
+        {
             output.push_str(&format!(
                 "const char str_{:X}[] = \"{}\";\n",
                 string.address,
@@ -719,7 +771,11 @@ fn generate_c(inputs: GenerationInputs<'_>) -> String {
         inputs.format,
         inputs.architecture,
     );
-    annotate_string_references(&mut ast_functions, inputs.strings);
+    annotate_string_references_with_instructions(
+        &mut ast_functions,
+        inputs.strings,
+        inputs.functions,
+    );
     let optimizer = Optimizer::new(inputs.optimization);
     for function in &mut ast_functions {
         optimizer.optimize_function(function);
@@ -780,4 +836,51 @@ fn function_prototype(function: &Function) -> String {
         sanitize_c_identifier(&function.name, "sub"),
         parameters
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analysis::strings::{StringEncoding, StringInfo};
+
+    #[test]
+    fn alternate_string_decodings_do_not_redeclare_the_same_c_symbol() {
+        let strings = [
+            StringInfo {
+                address: 0x2000,
+                value: "first decoding".into(),
+                encoding: StringEncoding::Ascii,
+                length: 14,
+            },
+            StringInfo {
+                address: 0x2000,
+                value: "alternate decoding".into(),
+                encoding: StringEncoding::Utf16Le,
+                length: 18,
+            },
+        ];
+        let cfg = ControlFlowGraph::from_instructions(&[]);
+        let c = generate_c(GenerationInputs {
+            input_path: "fixture",
+            format: "PE/EXE",
+            architecture: "x64",
+            entry_point: 0,
+            functions: &[],
+            import_addresses: &[],
+            strings: &strings,
+            runtime_matches: &[],
+            runtime_reports: &[],
+            cfg: &cfg,
+            optimization: OptimizationLevel::None,
+        });
+        assert_eq!(
+            c.matches("const char str_2000[]").count(),
+            1,
+            "ambiguous string decoding must retain one C declaration per address"
+        );
+        assert!(
+            c.contains("first decoding"),
+            "use the same deterministic address mapping as report and annotation lookups"
+        );
+    }
 }

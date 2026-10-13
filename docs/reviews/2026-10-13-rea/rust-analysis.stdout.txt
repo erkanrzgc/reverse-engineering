@@ -1,0 +1,411 @@
+{
+  "schema_version": "1.0",
+  "status": "complete",
+  "binary": {
+    "input_path": "C:\\Users\\erkanrzgc\\Desktop\\reverse-engineering\\docs\\reviews\\2026-10-13-rea\\fixture\\semantic-cases.exe",
+    "format": "PE/EXE",
+    "architecture": "x64",
+    "entry_point": 4096,
+    "input_bytes": 5260,
+    "code_section_count": 1,
+    "instruction_count": 253,
+    "function_count": 6,
+    "string_count": 11
+  },
+  "generated_c": "// Decompiled by reverse-engineering\n// Binary: C:\\x5CUsers\\x5Cerkanrzgc\\x5CDesktop\\x5Creverse-engineering\\x5Cdocs\\x5Creviews\\x5C2026-10-13-rea\\x5Cfixture\\x5Csemantic-cases.exe\n// Format: PE/EXE\n// Architecture: x64\n// Entry point: 0x1000\n// Runtime hints: none detected\n\n#include <stdint.h>\n#include <stddef.h>\n\n// String literals\nconst char str_2000[] = \"REA comparative fixture\";\nconst char str_301B[] = \"\\342\\240\\2000\\344\\200\\2000\\345\\240\\2000\";\nconst char str_303F[] = \"\\347\\234\\2000\\350\\254\\2000\\351\\240\\2000\\352\\260\\2000\\353\\250\\2000\\354\\250\\2000\";\nconst char str_3064[] = \"semantic-cases.exe\";\nconst char str_3077[] = \"fixture_conditional\";\nconst char str_308B[] = \"fixture_imul\";\nconst char str_3098[] = \"fixture_indexed_lea\";\nconst char str_30AC[] = \"fixture_movzx\";\nconst char str_30BA[] = \"fixture_partial\";\nconst char str_30CA[] = \"fixture_string\";\n\n// Function declarations\n// 0x1000 (export)\nuint64_t fixture_conditional(uint64_t rcx);\n// 0x100E (export)\nuint64_t fixture_imul(uint64_t rcx);\n// 0x1012 (export)\nuint64_t fixture_partial(void);\n// 0x101C (export)\nuint64_t fixture_movzx(void);\n// 0x1027 (export)\nuint64_t fixture_indexed_lea(uint64_t rcx, uint64_t rdx);\n// 0x102D (export)\nuint64_t fixture_string(void);\n\n// Function implementations\n// Function: fixture_conditional at 0x1000 (size: 14 bytes)\nuint64_t fixture_conditional(uint64_t rcx) {\n    uint64_t rax;\n    /* 0x1000: cmp ecx,0 */\n    if (((uint32_t)(uint64_t)(uint32_t)rcx == (uint32_t)0)) {\n        rax = (uint32_t)0;\n        return rax;\n    } else {\n        rax = (uint32_t)1;\n        return rax;\n    }\n}\n\n// Function: fixture_imul at 0x100E (size: 4 bytes)\nuint64_t fixture_imul(uint64_t rcx) {\n    uint64_t rax;\n    rax = (uint32_t)((uint64_t)(uint32_t)rcx * 7);\n    return rax;\n}\n\n// Function: fixture_partial at 0x1012 (size: 10 bytes)\nuint64_t fixture_partial(void) {\n    uint64_t rax;\n    rax = 4660;\n    rax = ((rax & -256) | (uint64_t)(uint8_t)86);\n    return rax;\n}\n\n// Function: fixture_movzx at 0x101C (size: 11 bytes)\nuint64_t fixture_movzx(void) {\n    uint64_t rax;\n    rax = 4660;\n    rax = (uint32_t)(uint64_t)(uint8_t)rax;\n    return rax;\n}\n\n// Function: fixture_indexed_lea at 0x1027 (size: 6 bytes)\nuint64_t fixture_indexed_lea(uint64_t rcx, uint64_t rdx) {\n    uint64_t rax;\n    rax = ((rcx + (rdx * 8)) + -8);\n    return rax;\n}\n\n// Function: fixture_string at 0x102D (size: 467 bytes)\nuint64_t fixture_string(void) {\n    uint64_t rax;\n    rax = 8192;\n    return rax;\n    /* 0x1035: nop */\n    /* 0x1036: nop */\n    /* 0x1037: nop */\n    /* 0x1038: nop */\n    /* 0x1039: nop */\n    /* 0x103A: nop */\n    /* 0x103B: nop */\n    /* 0x103C: nop */\n    /* 0x103D: nop */\n    /* 0x103E: nop */\n    /* 0x103F: nop */\n    /* 0x1040: add [rax],al */\n    /* 0x1042: add [rax],al */\n    /* 0x1044: add [rax],al */\n    /* 0x1046: add [rax],al */\n    /* 0x1048: add [rax],al */\n    /* 0x104A: add [rax],al */\n    /* 0x104C: add [rax],al */\n    /* 0x104E: add [rax],al */\n    /* 0x1050: add [rax],al */\n    /* 0x1052: add [rax],al */\n    /* 0x1054: add [rax],al */\n    /* 0x1056: add [rax],al */\n    /* 0x1058: add [rax],al */\n    /* 0x105A: add [rax],al */\n    /* 0x105C: add [rax],al */\n    /* 0x105E: add [rax],al */\n    /* 0x1060: add [rax],al */\n    /* 0x1062: add [rax],al */\n    /* 0x1064: add [rax],al */\n    /* 0x1066: add [rax],al */\n    /* 0x1068: add [rax],al */\n    /* 0x106A: add [rax],al */\n    /* 0x106C: add [rax],al */\n    /* 0x106E: add [rax],al */\n    /* 0x1070: add [rax],al */\n    /* 0x1072: add [rax],al */\n    /* 0x1074: add [rax],al */\n    /* 0x1076: add [rax],al */\n    /* 0x1078: add [rax],al */\n    /* 0x107A: add [rax],al */\n    /* 0x107C: add [rax],al */\n    /* 0x107E: add [rax],al */\n    /* 0x1080: add [rax],al */\n    /* 0x1082: add [rax],al */\n    /* 0x1084: add [rax],al */\n    /* 0x1086: add [rax],al */\n    /* 0x1088: add [rax],al */\n    /* 0x108A: add [rax],al */\n    /* 0x108C: add [rax],al */\n    /* 0x108E: add [rax],al */\n    /* 0x1090: add [rax],al */\n    /* 0x1092: add [rax],al */\n    /* 0x1094: add [rax],al */\n    /* 0x1096: add [rax],al */\n    /* 0x1098: add [rax],al */\n    /* 0x109A: add [rax],al */\n    /* 0x109C: add [rax],al */\n    /* 0x109E: add [rax],al */\n    /* 0x10A0: add [rax],al */\n    /* 0x10A2: add [rax],al */\n    /* 0x10A4: add [rax],al */\n    /* 0x10A6: add [rax],al */\n    /* 0x10A8: add [rax],al */\n    /* 0x10AA: add [rax],al */\n    /* 0x10AC: add [rax],al */\n    /* 0x10AE: add [rax],al */\n    /* 0x10B0: add [rax],al */\n    /* 0x10B2: add [rax],al */\n    /* 0x10B4: add [rax],al */\n    /* 0x10B6: add [rax],al */\n    /* 0x10B8: add [rax],al */\n    /* 0x10BA: add [rax],al */\n    /* 0x10BC: add [rax],al */\n    /* 0x10BE: add [rax],al */\n    /* 0x10C0: add [rax],al */\n    /* 0x10C2: add [rax],al */\n    /* 0x10C4: add [rax],al */\n    /* 0x10C6: add [rax],al */\n    /* 0x10C8: add [rax],al */\n    /* 0x10CA: add [rax],al */\n    /* 0x10CC: add [rax],al */\n    /* 0x10CE: add [rax],al */\n    /* 0x10D0: add [rax],al */\n    /* 0x10D2: add [rax],al */\n    /* 0x10D4: add [rax],al */\n    /* 0x10D6: add [rax],al */\n    /* 0x10D8: add [rax],al */\n    /* 0x10DA: add [rax],al */\n    /* 0x10DC: add [rax],al */\n    /* 0x10DE: add [rax],al */\n    /* 0x10E0: add [rax],al */\n    /* 0x10E2: add [rax],al */\n    /* 0x10E4: add [rax],al */\n    /* 0x10E6: add [rax],al */\n    /* 0x10E8: add [rax],al */\n    /* 0x10EA: add [rax],al */\n    /* 0x10EC: add [rax],al */\n    /* 0x10EE: add [rax],al */\n    /* 0x10F0: add [rax],al */\n    /* 0x10F2: add [rax],al */\n    /* 0x10F4: add [rax],al */\n    /* 0x10F6: add [rax],al */\n    /* 0x10F8: add [rax],al */\n    /* 0x10FA: add [rax],al */\n    /* 0x10FC: add [rax],al */\n    /* 0x10FE: add [rax],al */\n    /* 0x1100: add [rax],al */\n    /* 0x1102: add [rax],al */\n    /* 0x1104: add [rax],al */\n    /* 0x1106: add [rax],al */\n    /* 0x1108: add [rax],al */\n    /* 0x110A: add [rax],al */\n    /* 0x110C: add [rax],al */\n    /* 0x110E: add [rax],al */\n    /* 0x1110: add [rax],al */\n    /* 0x1112: add [rax],al */\n    /* 0x1114: add [rax],al */\n    /* 0x1116: add [rax],al */\n    /* 0x1118: add [rax],al */\n    /* 0x111A: add [rax],al */\n    /* 0x111C: add [rax],al */\n    /* 0x111E: add [rax],al */\n    /* 0x1120: add [rax],al */\n    /* 0x1122: add [rax],al */\n    /* 0x1124: add [rax],al */\n    /* 0x1126: add [rax],al */\n    /* 0x1128: add [rax],al */\n    /* 0x112A: add [rax],al */\n    /* 0x112C: add [rax],al */\n    /* 0x112E: add [rax],al */\n    /* 0x1130: add [rax],al */\n    /* 0x1132: add [rax],al */\n    /* 0x1134: add [rax],al */\n    /* 0x1136: add [rax],al */\n    /* 0x1138: add [rax],al */\n    /* 0x113A: add [rax],al */\n    /* 0x113C: add [rax],al */\n    /* 0x113E: add [rax],al */\n    /* 0x1140: add [rax],al */\n    /* 0x1142: add [rax],al */\n    /* 0x1144: add [rax],al */\n    /* 0x1146: add [rax],al */\n    /* 0x1148: add [rax],al */\n    /* 0x114A: add [rax],al */\n    /* 0x114C: add [rax],al */\n    /* 0x114E: add [rax],al */\n    /* 0x1150: add [rax],al */\n    /* 0x1152: add [rax],al */\n    /* 0x1154: add [rax],al */\n    /* 0x1156: add [rax],al */\n    /* 0x1158: add [rax],al */\n    /* 0x115A: add [rax],al */\n    /* 0x115C: add [rax],al */\n    /* 0x115E: add [rax],al */\n    /* 0x1160: add [rax],al */\n    /* 0x1162: add [rax],al */\n    /* 0x1164: add [rax],al */\n    /* 0x1166: add [rax],al */\n    /* 0x1168: add [rax],al */\n    /* 0x116A: add [rax],al */\n    /* 0x116C: add [rax],al */\n    /* 0x116E: add [rax],al */\n    /* 0x1170: add [rax],al */\n    /* 0x1172: add [rax],al */\n    /* 0x1174: add [rax],al */\n    /* 0x1176: add [rax],al */\n    /* 0x1178: add [rax],al */\n    /* 0x117A: add [rax],al */\n    /* 0x117C: add [rax],al */\n    /* 0x117E: add [rax],al */\n    /* 0x1180: add [rax],al */\n    /* 0x1182: add [rax],al */\n    /* 0x1184: add [rax],al */\n    /* 0x1186: add [rax],al */\n    /* 0x1188: add [rax],al */\n    /* 0x118A: add [rax],al */\n    /* 0x118C: add [rax],al */\n    /* 0x118E: add [rax],al */\n    /* 0x1190: add [rax],al */\n    /* 0x1192: add [rax],al */\n    /* 0x1194: add [rax],al */\n    /* 0x1196: add [rax],al */\n    /* 0x1198: add [rax],al */\n    /* 0x119A: add [rax],al */\n    /* 0x119C: add [rax],al */\n    /* 0x119E: add [rax],al */\n    /* 0x11A0: add [rax],al */\n    /* 0x11A2: add [rax],al */\n    /* 0x11A4: add [rax],al */\n    /* 0x11A6: add [rax],al */\n    /* 0x11A8: add [rax],al */\n    /* 0x11AA: add [rax],al */\n    /* 0x11AC: add [rax],al */\n    /* 0x11AE: add [rax],al */\n    /* 0x11B0: add [rax],al */\n    /* 0x11B2: add [rax],al */\n    /* 0x11B4: add [rax],al */\n    /* 0x11B6: add [rax],al */\n    /* 0x11B8: add [rax],al */\n    /* 0x11BA: add [rax],al */\n    /* 0x11BC: add [rax],al */\n    /* 0x11BE: add [rax],al */\n    /* 0x11C0: add [rax],al */\n    /* 0x11C2: add [rax],al */\n    /* 0x11C4: add [rax],al */\n    /* 0x11C6: add [rax],al */\n    /* 0x11C8: add [rax],al */\n    /* 0x11CA: add [rax],al */\n    /* 0x11CC: add [rax],al */\n    /* 0x11CE: add [rax],al */\n    /* 0x11D0: add [rax],al */\n    /* 0x11D2: add [rax],al */\n    /* 0x11D4: add [rax],al */\n    /* 0x11D6: add [rax],al */\n    /* 0x11D8: add [rax],al */\n    /* 0x11DA: add [rax],al */\n    /* 0x11DC: add [rax],al */\n    /* 0x11DE: add [rax],al */\n    /* 0x11E0: add [rax],al */\n    /* 0x11E2: add [rax],al */\n    /* 0x11E4: add [rax],al */\n    /* 0x11E6: add [rax],al */\n    /* 0x11E8: add [rax],al */\n    /* 0x11EA: add [rax],al */\n    /* 0x11EC: add [rax],al */\n    /* 0x11EE: add [rax],al */\n    /* 0x11F0: add [rax],al */\n    /* 0x11F2: add [rax],al */\n    /* 0x11F4: add [rax],al */\n    /* 0x11F6: add [rax],al */\n    /* 0x11F8: add [rax],al */\n    /* 0x11FA: add [rax],al */\n    /* 0x11FC: add [rax],al */\n    /* 0x11FE: add [rax],al */\n}\n\n",
+  "report": {
+    "summary": {
+      "input_path": "C:\\Users\\erkanrzgc\\Desktop\\reverse-engineering\\docs\\reviews\\2026-10-13-rea\\fixture\\semantic-cases.exe",
+      "format": "PE/EXE",
+      "architecture": "x64",
+      "entry_point": 4096,
+      "instruction_count": 253,
+      "basic_block_count": 9,
+      "function_count": 6,
+      "string_count": 11,
+      "cyberchef_recipe_count": 0,
+      "import_count": 0,
+      "export_count": 6,
+      "runtime_hints": []
+    },
+    "cfg_summary": {
+      "basic_block_count": 9,
+      "direct_call_count": 0,
+      "conditional_branch_count": 1,
+      "unconditional_branch_count": 0,
+      "return_count": 7
+    },
+    "functions": [
+      {
+        "name": "fixture_conditional",
+        "address": 4096,
+        "size": 14,
+        "instruction_count": 6,
+        "basic_block_estimate": 2,
+        "function_kind": "normal",
+        "is_import": false,
+        "is_export": true,
+        "calls": [],
+        "tail_calls": [],
+        "string_refs": []
+      },
+      {
+        "name": "fixture_imul",
+        "address": 4110,
+        "size": 4,
+        "instruction_count": 2,
+        "basic_block_estimate": 1,
+        "function_kind": "normal",
+        "is_import": false,
+        "is_export": true,
+        "calls": [],
+        "tail_calls": [],
+        "string_refs": []
+      },
+      {
+        "name": "fixture_partial",
+        "address": 4114,
+        "size": 10,
+        "instruction_count": 3,
+        "basic_block_estimate": 1,
+        "function_kind": "normal",
+        "is_import": false,
+        "is_export": true,
+        "calls": [],
+        "tail_calls": [],
+        "string_refs": []
+      },
+      {
+        "name": "fixture_movzx",
+        "address": 4124,
+        "size": 11,
+        "instruction_count": 3,
+        "basic_block_estimate": 1,
+        "function_kind": "normal",
+        "is_import": false,
+        "is_export": true,
+        "calls": [],
+        "tail_calls": [],
+        "string_refs": []
+      },
+      {
+        "name": "fixture_indexed_lea",
+        "address": 4135,
+        "size": 6,
+        "instruction_count": 2,
+        "basic_block_estimate": 1,
+        "function_kind": "normal",
+        "is_import": false,
+        "is_export": true,
+        "calls": [],
+        "tail_calls": [],
+        "string_refs": []
+      },
+      {
+        "name": "fixture_string",
+        "address": 4141,
+        "size": 467,
+        "instruction_count": 237,
+        "basic_block_estimate": 1,
+        "function_kind": "normal",
+        "is_import": false,
+        "is_export": true,
+        "calls": [],
+        "tail_calls": [],
+        "string_refs": [
+          {
+            "instruction_address": 4141,
+            "address": 8192,
+            "symbol": "str_2000",
+            "value": "REA comparative fixture"
+          }
+        ]
+      }
+    ],
+    "jump_tables": [],
+    "call_graph": [],
+    "xrefs": {
+      "functions": [
+        {
+          "function_name": "fixture_conditional",
+          "function_address": 4096,
+          "calls_out": [],
+          "called_by": [],
+          "strings": []
+        },
+        {
+          "function_name": "fixture_imul",
+          "function_address": 4110,
+          "calls_out": [],
+          "called_by": [],
+          "strings": []
+        },
+        {
+          "function_name": "fixture_partial",
+          "function_address": 4114,
+          "calls_out": [],
+          "called_by": [],
+          "strings": []
+        },
+        {
+          "function_name": "fixture_movzx",
+          "function_address": 4124,
+          "calls_out": [],
+          "called_by": [],
+          "strings": []
+        },
+        {
+          "function_name": "fixture_indexed_lea",
+          "function_address": 4135,
+          "calls_out": [],
+          "called_by": [],
+          "strings": []
+        },
+        {
+          "function_name": "fixture_string",
+          "function_address": 4141,
+          "calls_out": [],
+          "called_by": [],
+          "strings": [
+            {
+              "instruction_address": 4141,
+              "address": 8192,
+              "symbol": "str_2000",
+              "value": "REA comparative fixture"
+            }
+          ]
+        }
+      ],
+      "imports": []
+    },
+    "sections": [
+      {
+        "name": ".text",
+        "virtual_address": 4096,
+        "size": 512,
+        "raw_size": 512,
+        "is_code": true,
+        "is_data": false,
+        "is_readable": true,
+        "is_writable": false,
+        "is_executable": true
+      },
+      {
+        "name": ".rdata",
+        "virtual_address": 8192,
+        "size": 512,
+        "raw_size": 512,
+        "is_code": false,
+        "is_data": true,
+        "is_readable": true,
+        "is_writable": false,
+        "is_executable": false
+      },
+      {
+        "name": ".edata",
+        "virtual_address": 12288,
+        "size": 512,
+        "raw_size": 512,
+        "is_code": false,
+        "is_data": true,
+        "is_readable": true,
+        "is_writable": false,
+        "is_executable": false
+      },
+      {
+        "name": ".idata",
+        "virtual_address": 16384,
+        "size": 512,
+        "raw_size": 512,
+        "is_code": false,
+        "is_data": true,
+        "is_readable": true,
+        "is_writable": false,
+        "is_executable": false
+      }
+    ],
+    "strings": [
+      {
+        "address": 8192,
+        "symbol": "str_2000",
+        "value": "REA comparative fixture",
+        "encoding": "Ascii",
+        "length": 23
+      },
+      {
+        "address": 12315,
+        "symbol": "str_301B",
+        "value": "(　@　X　",
+        "encoding": "Utf16Be",
+        "length": 6
+      },
+      {
+        "address": 12315,
+        "symbol": "str_301B",
+        "value": "⠀0䀀0堀0",
+        "encoding": "Utf16Le",
+        "length": 6
+      },
+      {
+        "address": 12351,
+        "symbol": "str_303F",
+        "value": "眀0謀0頀0가0먀0쨀0",
+        "encoding": "Utf16Le",
+        "length": 12
+      },
+      {
+        "address": 12388,
+        "symbol": "str_3064",
+        "value": "semantic-cases.exe",
+        "encoding": "Ascii",
+        "length": 18
+      },
+      {
+        "address": 12407,
+        "symbol": "str_3077",
+        "value": "fixture_conditional",
+        "encoding": "Ascii",
+        "length": 19
+      },
+      {
+        "address": 12427,
+        "symbol": "str_308B",
+        "value": "fixture_imul",
+        "encoding": "Ascii",
+        "length": 12
+      },
+      {
+        "address": 12440,
+        "symbol": "str_3098",
+        "value": "fixture_indexed_lea",
+        "encoding": "Ascii",
+        "length": 19
+      },
+      {
+        "address": 12460,
+        "symbol": "str_30AC",
+        "value": "fixture_movzx",
+        "encoding": "Ascii",
+        "length": 13
+      },
+      {
+        "address": 12474,
+        "symbol": "str_30BA",
+        "value": "fixture_partial",
+        "encoding": "Ascii",
+        "length": 15
+      },
+      {
+        "address": 12490,
+        "symbol": "str_30CA",
+        "value": "fixture_string",
+        "encoding": "Ascii",
+        "length": 14
+      }
+    ],
+    "suspicious_strings": [
+      {
+        "address": 12388,
+        "symbol": "str_3064",
+        "value": "semantic-cases.exe",
+        "category": "platform_indicator"
+      }
+    ],
+    "cyberchef_recipes": [],
+    "strings_by_function": [
+      {
+        "function_name": "fixture_string",
+        "function_address": 4141,
+        "strings": [
+          {
+            "instruction_address": 4141,
+            "address": 8192,
+            "symbol": "str_2000",
+            "value": "REA comparative fixture"
+          }
+        ]
+      }
+    ],
+    "api_insights": [],
+    "behavior_report": {
+      "risk_score": 4,
+      "risk_level": "low",
+      "categories": [
+        {
+          "name": "filesystem",
+          "severity": "low",
+          "evidence_count": 1,
+          "evidence": [
+            "str_3064 @ 0x3064: semantic-cases.exe"
+          ]
+        }
+      ],
+      "findings": [
+        {
+          "category": "filesystem",
+          "severity": "low",
+          "source": "string",
+          "detail": "str_3064 @ 0x3064: semantic-cases.exe"
+        }
+      ]
+    },
+    "import_addresses": [],
+    "imports": [],
+    "exports": [
+      {
+        "name": "fixture_conditional",
+        "address": 4096,
+        "ordinal": null
+      },
+      {
+        "name": "fixture_imul",
+        "address": 4110,
+        "ordinal": null
+      },
+      {
+        "name": "fixture_partial",
+        "address": 4114,
+        "ordinal": null
+      },
+      {
+        "name": "fixture_movzx",
+        "address": 4124,
+        "ordinal": null
+      },
+      {
+        "name": "fixture_indexed_lea",
+        "address": 4135,
+        "ordinal": null
+      },
+      {
+        "name": "fixture_string",
+        "address": 4141,
+        "ordinal": null
+      }
+    ],
+    "pe_data_directories": [
+      {
+        "name": "export_table",
+        "virtual_address": 12288,
+        "size": 217,
+        "section": ".edata"
+      },
+      {
+        "name": "import_table",
+        "virtual_address": 16384,
+        "size": 24,
+        "section": ".idata"
+      }
+    ]
+  },
+  "runtime_artifacts": {
+    "artifacts": [],
+    "notes": [
+      "No runtime/language family hints detected; no runtime artifacts were found."
+    ],
+    "captured_bytes": 0,
+    "truncated": false,
+    "truncation_reasons": []
+  },
+  "diagnostics": []
+}

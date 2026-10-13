@@ -48,13 +48,41 @@ impl ArmDisassembler {
             let mnemonic = insn.mnemonic().unwrap_or("").to_string();
             let operands = insn.op_str().unwrap_or("").to_string();
 
-            instructions.push(ArmInstruction {
+            let mut instruction = ArmInstruction {
                 address: insn.address(),
                 bytes: insn.bytes().to_vec(),
                 mnemonic,
                 operands,
                 length: insn.len(),
-            });
+                near_branch_target: None,
+            };
+            if instruction.is_control_flow() {
+                let detail = self.cs.insn_detail(insn).map_err(|error| {
+                    Error::Disassembly(format!("Failed to decode ARM branch operands: {error}"))
+                })?;
+                let architecture_detail = detail.arch_detail();
+                instruction.near_branch_target = if let Some(arm) = architecture_detail.arm() {
+                    arm.operands()
+                        .filter_map(|operand| match operand.op_type {
+                            arch::arm::ArmOperandType::Imm(address) => {
+                                Some(u64::from(address as u32))
+                            }
+                            _ => None,
+                        })
+                        .last()
+                } else if let Some(arm64) = architecture_detail.arm64() {
+                    arm64
+                        .operands()
+                        .filter_map(|operand| match operand.op_type {
+                            arch::arm64::Arm64OperandType::Imm(address) => Some(address as u64),
+                            _ => None,
+                        })
+                        .last()
+                } else {
+                    None
+                };
+            }
+            instructions.push(instruction);
         }
 
         Ok(instructions)
@@ -69,6 +97,9 @@ pub struct ArmInstruction {
     pub mnemonic: String,
     pub operands: String,
     pub length: usize,
+    /// Immediate target supplied by Capstone for direct branches and calls.
+    /// Register branches and returns have no statically known target.
+    pub near_branch_target: Option<u64>,
 }
 
 impl std::fmt::Display for ArmInstruction {
@@ -88,27 +119,30 @@ impl ArmInstruction {
         // Whitelist real branch / return mnemonics.
         // `starts_with("b")` false-positived on bic, bfi, bfc, bkpt, bl etc.
         let base = m.split('.').next().unwrap_or(&m);
-        matches!(
-            base,
-            "b" | "bl"
-                | "blx"
-                | "bx"
-                | "bxj"
-                | "cbz"
-                | "cbnz"
-                | "tbb"
-                | "tbh"
-                | "tbz"
-                | "tbnz"
-                | "ret"
-                | "eret"
-                | "br"
-                | "braa"
-                | "brab"
-                | "blr"
-                | "blraa"
-                | "blrab"
-        )
+        self.is_conditional_branch()
+            || self.is_call()
+            || self.is_return()
+            || matches!(
+                base,
+                "b" | "bl"
+                    | "blx"
+                    | "bx"
+                    | "bxj"
+                    | "cbz"
+                    | "cbnz"
+                    | "tbb"
+                    | "tbh"
+                    | "tbz"
+                    | "tbnz"
+                    | "ret"
+                    | "eret"
+                    | "br"
+                    | "braa"
+                    | "brab"
+                    | "blr"
+                    | "blraa"
+                    | "blrab"
+            )
     }
 
     /// Check if this is a conditional branch (ARM ".cond" form or ARM32 cond suffix).
@@ -149,19 +183,43 @@ impl ArmInstruction {
     /// Check if this is an unconditional branch
     pub fn is_unconditional_branch(&self) -> bool {
         let m = self.mnemonic.to_lowercase();
-        matches!(m.as_str(), "b" | "bx" | "bxj" | "br" | "braa" | "brab")
+        !self.is_return() && matches!(m.as_str(), "b" | "bx" | "bxj" | "br" | "braa" | "brab")
     }
 
     /// Check if this is a call instruction
     pub fn is_call(&self) -> bool {
         let m = self.mnemonic.to_lowercase();
         matches!(m.as_str(), "bl" | "blx" | "blr" | "blraa" | "blrab")
+            || m.strip_prefix("blx")
+                .or_else(|| m.strip_prefix("bl"))
+                .is_some_and(|condition| {
+                    matches!(
+                        condition,
+                        "eq" | "ne"
+                            | "cs"
+                            | "hs"
+                            | "cc"
+                            | "lo"
+                            | "mi"
+                            | "pl"
+                            | "vs"
+                            | "vc"
+                            | "hi"
+                            | "ls"
+                            | "ge"
+                            | "lt"
+                            | "gt"
+                            | "le"
+                            | "al"
+                    )
+                })
     }
 
     /// Check if this is a return instruction
     pub fn is_return(&self) -> bool {
         let m = self.mnemonic.to_lowercase();
         matches!(m.as_str(), "ret" | "eret")
+            || (m == "bx" && self.operands.trim().eq_ignore_ascii_case("lr"))
     }
 }
 
@@ -176,6 +234,7 @@ mod tests {
             mnemonic: mnemonic.to_string(),
             operands: String::new(),
             length: 4,
+            near_branch_target: None,
         }
     }
 

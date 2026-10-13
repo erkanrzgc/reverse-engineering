@@ -106,6 +106,14 @@ pub enum UnaryOperator {
 /// Statement
 #[derive(Debug, Clone)]
 pub enum Statement {
+    /// A lifted instruction and its source address. The structuring pass consumes
+    /// this wrapper after recording instruction-to-statement correspondence.
+    /// Unsupported typed instructions stay placeholders rather than being
+    /// reinterpreted through the less precise legacy text parser.
+    Instruction {
+        address: u64,
+        statement: Box<Statement>,
+    },
     /// Expression statement
     Expression(Expression),
     /// Return statement

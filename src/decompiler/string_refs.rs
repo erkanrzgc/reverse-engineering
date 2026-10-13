@@ -32,6 +32,117 @@ pub fn annotate_string_references(functions: &mut [Function], strings: &[StringI
     }
 }
 
+/// Annotate using original decoded operands rather than guessing target addresses
+/// from numbers in formatted instruction text.
+pub fn annotate_string_references_with_instructions(
+    functions: &mut [Function],
+    strings: &[StringInfo],
+    infos: &[crate::analysis::FunctionInfo],
+) {
+    let symbols = build_string_symbol_map(strings);
+    if symbols.is_empty() {
+        return;
+    }
+    for (function, info) in functions.iter_mut().zip(infos) {
+        let instructions: HashMap<_, _> = info
+            .instructions
+            .iter()
+            .map(|instruction| (instruction.address(), instruction))
+            .collect();
+        for statement in &mut function.body {
+            annotate_typed_statement(statement, &symbols, &instructions);
+        }
+    }
+}
+
+fn annotate_typed_statement(
+    statement: &mut Statement,
+    symbols: &HashMap<u64, String>,
+    instructions: &HashMap<u64, &crate::disasm::Instruction>,
+) {
+    use crate::disasm::{Instruction, Operand};
+    match statement {
+        Statement::InlineAsm { address, disasm } => {
+            let Some(Instruction::X86(instruction)) = instructions.get(address).copied() else {
+                return;
+            };
+            let Some(ir) = &instruction.ir else {
+                return;
+            };
+            // A bracketed operand is replaced only when the typed memory target
+            // is static. Register-relative/indexed displacements are not addresses.
+            let target = ir.operands.iter().find_map(|operand| match operand {
+                Operand::Mem(memory)
+                    if memory.index.is_none()
+                        && matches!(memory.base.as_deref(), None | Some("rip") | Some("eip")) =>
+                {
+                    symbols.get(&(memory.disp as u64))
+                }
+                _ => None,
+            });
+            if let Some(symbol) = target {
+                if let Some(start) = disasm.find('[') {
+                    if let Some(end) = disasm[start..].find(']') {
+                        disasm.replace_range(start..=start + end, &format!("[{symbol}]"));
+                    }
+                }
+            }
+            let immediates: HashMap<_, _> = ir
+                .operands
+                .iter()
+                .filter_map(|operand| match operand {
+                    Operand::Imm(value) => symbols
+                        .get(&(*value as u64))
+                        .map(|symbol| (*value as u64, symbol)),
+                    _ => None,
+                })
+                .collect();
+            // Immediate operands may name string addresses. Do not replace a
+            // matching number inside an unrelated dynamic memory expression.
+            let original = disasm.clone();
+            *disasm = hex_address_regex()
+                .replace_all(&original, |captures: &regex::Captures<'_>| {
+                    let matched = captures.get(0).expect("full match");
+                    let prefix = &original[..matched.start()];
+                    let in_memory = prefix
+                        .rfind('[')
+                        .is_some_and(|start| prefix.rfind(']').is_none_or(|end| start > end));
+                    if in_memory {
+                        return matched.as_str().to_string();
+                    }
+                    captured_hex_address(captures)
+                        .and_then(|address| immediates.get(&address))
+                        .map(|symbol| (*symbol).clone())
+                        .unwrap_or_else(|| matched.as_str().to_string())
+                })
+                .into_owned();
+        }
+        Statement::Instruction { statement, .. } => {
+            annotate_typed_statement(statement, symbols, instructions)
+        }
+        Statement::If {
+            then_block,
+            else_block,
+            ..
+        } => {
+            for statement in then_block {
+                annotate_typed_statement(statement, symbols, instructions);
+            }
+            if let Some(else_block) = else_block {
+                for statement in else_block {
+                    annotate_typed_statement(statement, symbols, instructions);
+                }
+            }
+        }
+        Statement::Block(body) | Statement::While { body, .. } | Statement::For { body, .. } => {
+            for statement in body {
+                annotate_typed_statement(statement, symbols, instructions);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn build_string_symbol_map(strings: &[StringInfo]) -> HashMap<u64, String> {
     strings
         .iter()
@@ -47,6 +158,7 @@ fn annotate_statements(statements: &mut [Statement], symbols: &HashMap<u64, Stri
 
 fn annotate_statement(statement: &mut Statement, symbols: &HashMap<u64, String>) {
     match statement {
+        Statement::Instruction { statement, .. } => annotate_statement(statement, symbols),
         Statement::InlineAsm { disasm, .. } => {
             *disasm = annotate_disasm(disasm, symbols);
         }

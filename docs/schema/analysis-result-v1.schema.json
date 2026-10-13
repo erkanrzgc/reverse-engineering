@@ -11,6 +11,6 @@
     "generated_c": {"type": ["string", "null"]}, "report": {"type": ["object", "null"]}, "runtime_artifacts": {"type": ["object", "null"]},
     "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
   },
-  "$defs": {"diagnostic": {"type": "object", "required": ["stage", "severity", "code", "message"], "properties": {"stage": {"type": "string", "enum": ["input", "parse", "disassembly", "strings", "runtime_artifacts", "decompilation", "internal"]}, "severity": {"type": "string", "enum": ["warning", "error"]}, "code": {"type": "string", "enum": ["empty_input", "input_read_failed", "input_limit_exceeded", "unsupported_format", "parse_failed", "no_code_sections", "unsupported_architecture", "disassembly_failed", "string_limit_exceeded", "internal_failure"]}, "message": {"type": "string"}}, "additionalProperties": false}},
+  "$defs": {"diagnostic": {"type": "object", "required": ["stage", "severity", "code", "message"], "properties": {"stage": {"type": "string", "enum": ["input", "parse", "disassembly", "strings", "runtime_artifacts", "decompilation", "internal"]}, "severity": {"type": "string", "enum": ["warning", "error"]}, "code": {"type": "string", "enum": ["empty_input", "input_read_failed", "input_limit_exceeded", "unsupported_format", "parse_failed", "no_code_sections", "unsupported_architecture", "disassembly_failed", "string_limit_exceeded", "artifact_limit_exceeded", "internal_failure"]}, "message": {"type": "string"}}, "additionalProperties": false}},
   "additionalProperties": false
 }

@@ -111,8 +111,8 @@ fn python_packaged_report(
                 "Look for PyInstaller CArchive/PYZ payloads and recover bundled modules before native C pseudocode.",
             ),
             action(
-                "Decompile bytecode when available",
-                "Recovered .pyc files can often be decompiled back to Python-like source; Nuitka/Cython builds usually require native analysis instead.",
+                "Validate bytecode before decompilation",
+                "Validate the Python version, header, marshal structure and carving bounds of each .pyc-like candidate before decompilation; Nuitka/Cython builds usually require native analysis instead.",
             ),
         ],
     }

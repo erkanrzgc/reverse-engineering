@@ -45,6 +45,19 @@ pub fn structure_function_with_cfg(function: &mut Function, cfg: &ControlFlowGra
 
 fn structure_statement(statement: &mut Statement) {
     match statement {
+        Statement::Instruction {
+            statement: inner, ..
+        } => {
+            // The lifter already used typed operand semantics. Only return
+            // placeholders may be promoted here; retrying unsupported operands
+            // using disassembly text can discard indexes and register widths.
+            *statement = match inner.as_ref() {
+                Statement::InlineAsm { disasm, .. } if is_void_return(disasm) => {
+                    Statement::Return(None)
+                }
+                inner => inner.clone(),
+            };
+        }
         Statement::InlineAsm { disasm, .. } if is_void_return(disasm) => {
             *statement = Statement::Return(None);
         }
@@ -278,7 +291,9 @@ fn address_to_statement_index(function: &Function) -> HashMap<u64, usize> {
         .iter()
         .enumerate()
         .filter_map(|(idx, statement)| match statement {
-            Statement::InlineAsm { address, .. } => Some((*address, idx)),
+            Statement::InlineAsm { address, .. } | Statement::Instruction { address, .. } => {
+                Some((*address, idx))
+            }
             _ => None,
         })
         .collect()
@@ -488,12 +503,42 @@ fn recover_cmp_condition_ir(
         operand_to_text(right)
     );
 
-    let Some(left_expr) = operand_to_expression(left) else {
+    let Some(mut left_expr) = operand_to_expression(left) else {
         return Some(comment_condition(&expression_text, setup_text, branch_text));
     };
-    let Some(right_expr) = operand_to_expression(right) else {
+    let Some(mut right_expr) = operand_to_expression(right) else {
         return Some(comment_condition(&expression_text, setup_text, branch_text));
     };
+
+    let width = match left {
+        Operand::Reg(register) => crate::decompiler::lifter::register_width(register),
+        Operand::Mem(memory) => memory.size_bytes.map(|bytes| bytes * 8),
+        _ => None,
+    };
+    let signed = matches!(
+        branch.op.as_str(),
+        "jl" | "jnge" | "jle" | "jng" | "jg" | "jnle" | "jge" | "jnl"
+    );
+    let type_info = match (width, signed) {
+        (Some(8), false) => Some(TypeInfo::U8),
+        (Some(16), false) => Some(TypeInfo::U16),
+        (Some(32), false) => Some(TypeInfo::U32),
+        (Some(8), true) => Some(TypeInfo::I8),
+        (Some(16), true) => Some(TypeInfo::I16),
+        (Some(32), true) => Some(TypeInfo::I32),
+        (Some(64), true) => Some(TypeInfo::I64),
+        _ => None,
+    };
+    if let Some(type_info) = type_info {
+        left_expr = Expression::Cast {
+            type_info: type_info.clone(),
+            value: Box::new(left_expr),
+        };
+        right_expr = Expression::Cast {
+            type_info,
+            value: Box::new(right_expr),
+        };
+    }
 
     Some(Expression::BinaryOperation {
         op,
@@ -579,7 +624,7 @@ fn operand_to_text(operand: &Operand) -> String {
 
 fn operand_to_expression(operand: &Operand) -> Option<Expression> {
     match operand {
-        Operand::Reg(r) => Some(Expression::Variable(canonicalize_register_name(r))),
+        Operand::Reg(r) => crate::decompiler::lifter::register_read_expr(r),
         Operand::Imm(v) => Some(Expression::IntegerLiteral(*v)),
         Operand::Mem(mem) => stack_variable_name_from_mem(mem).map(Expression::Variable),
         Operand::Other(_) => None,
@@ -587,6 +632,9 @@ fn operand_to_expression(operand: &Operand) -> Option<Expression> {
 }
 
 fn stack_variable_name_from_mem(mem: &MemoryOperand) -> Option<String> {
+    if mem.index.is_some() || mem.scale > 1 {
+        return None;
+    }
     let base = mem.base.as_deref()?.to_ascii_lowercase();
     if matches!(base.as_str(), "rbp" | "ebp") {
         if mem.disp < 0 {
@@ -1192,6 +1240,7 @@ mod ir_condition_recovery_tests {
             address,
             op: op.to_string(),
             operands,
+            display_text: None,
         }
     }
 
@@ -1308,14 +1357,20 @@ mod ir_condition_recovery_tests {
 
     #[test]
     fn operand_to_expression_canonicalizes_register_aliases_to_class_name() {
-        // `eax` and `r8d` are sub-register views; classified to rax/r8.
+        // Sub-register views must truncate before widening their storage register.
         assert!(matches!(
             operand_to_expression(&reg("eax")),
-            Some(Expression::Variable(ref n)) if n == "rax"
+            Some(Expression::Cast {
+                type_info: TypeInfo::U64,
+                ..
+            })
         ));
         assert!(matches!(
             operand_to_expression(&reg("r8d")),
-            Some(Expression::Variable(ref n)) if n == "r8"
+            Some(Expression::Cast {
+                type_info: TypeInfo::U64,
+                ..
+            })
         ));
     }
 
